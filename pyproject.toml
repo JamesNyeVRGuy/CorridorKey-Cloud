@@ -72,7 +72,7 @@ markers = [
     "slow: long-running test",
     "mlx: requires Apple Silicon with MLX installed",
 ]
-addopts = "-x --tb=short"
+addopts = "--tb=short"
 
 [tool.coverage.run]
 branch = true
