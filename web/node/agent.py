@@ -16,7 +16,7 @@ from pathlib import Path
 
 import httpx
 
-from device_utils import enumerate_gpus
+from device_utils import check_gpu_available, enumerate_gpus
 
 from . import config
 from .file_transfer import FileTransfer
@@ -103,15 +103,30 @@ class NodeAgent:
             logger.error(f"Registration failed: {e}")
             return False
 
+    def _check_gpu_ready(self) -> bool:
+        """Check if our GPU is available (not in use by other processes)."""
+        available, reason = check_gpu_available(self._gpu_indices[0])
+        if not available:
+            logger.debug(f"GPU not available: {reason}")
+        return available
+
     def _heartbeat(self) -> bool:
         try:
-            r = self._api("post", f"/api/nodes/{self.node_id}/heartbeat", json={"vram_free_gb": 0, "status": "online"})
+            gpu_ready = self._check_gpu_ready()
+            status = "online" if gpu_ready else "busy"
+            r = self._api(
+                "post",
+                f"/api/nodes/{self.node_id}/heartbeat",
+                json={"vram_free_gb": 0, "status": status},
+            )
             return r.status_code == 200
         except Exception:
             return False
 
     def _poll_job(self) -> dict | None:
-        """Poll for the next available job."""
+        """Poll for the next available job. Skips if GPU is busy."""
+        if not self._check_gpu_ready():
+            return None
         try:
             r = self._api("get", f"/api/nodes/{self.node_id}/next-job")
             r.raise_for_status()

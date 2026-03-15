@@ -13,7 +13,7 @@ from backend.job_queue import JobStatus
 from backend.natural_sort import natsorted
 
 from ..deps import get_queue, get_service
-from ..nodes import GPUSlot, NodeInfo, registry
+from ..nodes import GPUSlot, NodeInfo, NodeSchedule, registry
 from ..routes.clips import _clip_to_schema, _clips_dir
 from ..ws import manager
 
@@ -104,6 +104,57 @@ def list_nodes():
     return [n.to_dict() for n in registry.list_nodes()]
 
 
+# --- Pause / Schedule ---
+
+
+class NodeScheduleRequest(BaseModel):
+    enabled: bool = False
+    start: str = "00:00"
+    end: str = "23:59"
+
+
+@router.post("/{node_id}/pause")
+def pause_node(node_id: str):
+    """Pause a node — it won't receive new jobs until resumed."""
+    node = registry.get_node(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
+    node.paused = True
+    manager.send_node_update(node.to_dict())
+    return {"status": "paused"}
+
+
+@router.post("/{node_id}/resume")
+def resume_node(node_id: str):
+    """Resume a paused node."""
+    node = registry.get_node(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
+    node.paused = False
+    manager.send_node_update(node.to_dict())
+    return {"status": "resumed"}
+
+
+@router.get("/{node_id}/schedule")
+def get_node_schedule(node_id: str):
+    """Get a node's active hours schedule."""
+    node = registry.get_node(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
+    return node.schedule.to_dict()
+
+
+@router.put("/{node_id}/schedule")
+def set_node_schedule(node_id: str, req: NodeScheduleRequest):
+    """Set a node's active hours schedule."""
+    node = registry.get_node(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
+    node.schedule = NodeSchedule(enabled=req.enabled, start=req.start, end=req.end)
+    manager.send_node_update(node.to_dict())
+    return node.schedule.to_dict()
+
+
 # --- Job dispatch ---
 
 
@@ -117,6 +168,9 @@ def get_next_job(node_id: str):
     node = registry.get_node(node_id)
     if not node or not node.is_alive:
         raise HTTPException(status_code=404, detail="Node not registered or offline")
+
+    if not node.can_accept_jobs:
+        return {"job": None, "reason": "paused" if node.paused else "outside_schedule"}
 
     queue = get_queue()
     job = queue.claim_job(node_id)

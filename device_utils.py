@@ -132,6 +132,48 @@ def enumerate_gpus() -> list[GPUInfo]:
     return gpus
 
 
+def check_gpu_available(gpu_index: int = 0, min_free_gb: float = 0.0) -> tuple[bool, str]:
+    """Check if a GPU is available for CorridorKey work.
+
+    Checks GPU utilization via nvidia-smi. If another process is using
+    significant GPU compute (>50% utilization), the GPU is considered busy.
+
+    Returns:
+        (available, reason) — True if GPU can accept work, else False with reason.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                f"--id={gpu_index}",
+                "--query-gpu=utilization.gpu,memory.free",
+                "--format=csv,nounits,noheader",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return True, "nvidia-smi unavailable"
+
+        parts = [p.strip() for p in result.stdout.strip().split(",")]
+        if len(parts) < 2:
+            return True, "parse error"
+
+        util_pct = int(parts[0])
+        free_mb = float(parts[1])
+        free_gb = free_mb / 1024
+
+        if util_pct > 50:
+            return False, f"GPU {gpu_index} busy ({util_pct}% utilization)"
+        if min_free_gb > 0 and free_gb < min_free_gb:
+            return False, f"GPU {gpu_index} low VRAM ({free_gb:.1f}GB free, need {min_free_gb:.1f}GB)"
+        return True, "ok"
+
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return True, "nvidia-smi unavailable"
+
+
 def clear_device_cache(device: torch.device | str) -> None:
     """Clear GPU memory cache if applicable (no-op for CPU)."""
     device_type = device.type if isinstance(device, torch.device) else device

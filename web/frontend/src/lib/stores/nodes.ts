@@ -10,6 +10,13 @@ export interface GPUSlot {
 	current_job_id: string | null;
 }
 
+export interface NodeSchedule {
+	enabled: boolean;
+	start: string;
+	end: string;
+	is_active_now: boolean;
+}
+
 export interface NodeInfo {
 	node_id: string;
 	name: string;
@@ -23,6 +30,8 @@ export interface NodeInfo {
 	last_heartbeat: number;
 	capabilities: string[];
 	shared_storage: string | null;
+	paused: boolean;
+	schedule: NodeSchedule;
 }
 
 export const nodes = writable<NodeInfo[]>([]);

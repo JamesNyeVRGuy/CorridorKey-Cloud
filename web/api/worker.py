@@ -26,6 +26,20 @@ _CPU_JOB_TYPES = {JobType.VIDEO_EXTRACT, JobType.VIDEO_STITCH}
 _vram_limit_gb: float = 0.0
 _vram_lock = threading.Lock()
 
+# Local GPU processing toggle. When False, only CPU jobs run locally;
+# GPU jobs stay in the queue for remote nodes to claim.
+_local_gpu_enabled: bool = True
+
+
+def set_local_gpu_enabled(enabled: bool) -> None:
+    global _local_gpu_enabled
+    _local_gpu_enabled = enabled
+    logger.info(f"Local GPU processing {'enabled' if enabled else 'disabled (remote-only)'}")
+
+
+def get_local_gpu_enabled() -> bool:
+    return _local_gpu_enabled
+
 
 def set_vram_limit(gb: float) -> None:
     global _vram_limit_gb
@@ -282,6 +296,11 @@ def worker_loop(
             continue
 
         is_cpu = peeked.job_type in _CPU_JOB_TYPES
+
+        if not is_cpu and not _local_gpu_enabled:
+            # Local GPU disabled — leave GPU jobs for remote nodes
+            stop_event.wait(1.0)
+            continue
 
         if is_cpu:
             job = queue.claim_job("local")

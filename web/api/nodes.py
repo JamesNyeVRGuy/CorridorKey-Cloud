@@ -6,8 +6,40 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class NodeSchedule:
+    """Active hours schedule for a node."""
+
+    enabled: bool = False
+    start: str = "00:00"  # HH:MM (24h)
+    end: str = "23:59"  # HH:MM (24h)
+
+    @property
+    def is_active_now(self) -> bool:
+        """Check if the current time is within the active window."""
+        if not self.enabled:
+            return True  # no schedule = always active
+
+        now = datetime.now().strftime("%H:%M")
+        if self.start <= self.end:
+            # Same-day window: e.g. 09:00-17:00
+            return self.start <= now <= self.end
+        else:
+            # Overnight window: e.g. 20:00-08:00
+            return now >= self.start or now <= self.end
+
+    def to_dict(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "start": self.start,
+            "end": self.end,
+            "is_active_now": self.is_active_now,
+        }
 
 
 @dataclass
@@ -49,10 +81,17 @@ class NodeInfo:
     last_heartbeat: float = field(default_factory=time.time)
     capabilities: list[str] = field(default_factory=list)  # ["cuda", "mlx", "cpu"]
     shared_storage: str | None = None  # path if node has shared storage mounted
+    paused: bool = False
+    schedule: NodeSchedule = field(default_factory=NodeSchedule)
 
     @property
     def is_alive(self) -> bool:
         return time.time() - self.last_heartbeat < 30  # 30s timeout
+
+    @property
+    def can_accept_jobs(self) -> bool:
+        """True if the node is alive, not paused, and within its schedule."""
+        return self.is_alive and not self.paused and self.schedule.is_active_now
 
     @property
     def gpu_count(self) -> int:
@@ -78,6 +117,8 @@ class NodeInfo:
             "last_heartbeat": self.last_heartbeat,
             "capabilities": self.capabilities,
             "shared_storage": self.shared_storage,
+            "paused": self.paused,
+            "schedule": self.schedule.to_dict(),
         }
 
 
@@ -102,6 +143,7 @@ class NodeRegistry:
                 existing.shared_storage = info.shared_storage
                 existing.status = "online"
                 existing.last_heartbeat = time.time()
+                # Preserve paused and schedule on re-register (set from UI)
                 logger.info(f"Node re-registered: {info.name} ({info.node_id})")
             else:
                 info.last_heartbeat = time.time()

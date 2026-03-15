@@ -225,13 +225,20 @@ export const api = {
 	},
 	nodes: {
 		list: () => request<import('$lib/stores/nodes').NodeInfo[]>('GET', '/api/nodes'),
-		remove: (nodeId: string) => request<unknown>('DELETE', `/api/nodes/${encodeURIComponent(nodeId)}`)
+		remove: (nodeId: string) => request<unknown>('DELETE', `/api/nodes/${encodeURIComponent(nodeId)}`),
+		pause: (nodeId: string) => request<unknown>('POST', `/api/nodes/${encodeURIComponent(nodeId)}/pause`),
+		resume: (nodeId: string) => request<unknown>('POST', `/api/nodes/${encodeURIComponent(nodeId)}/resume`),
+		setSchedule: (nodeId: string, schedule: { enabled: boolean; start: string; end: string }) =>
+			request<unknown>('PUT', `/api/nodes/${encodeURIComponent(nodeId)}/schedule`, schedule)
 	},
 	system2: {
 		localGpus: () =>
 			request<{ index: number; name: string; vram_total_gb: number; vram_free_gb: number }[]>(
 				'GET',
 				'/api/system/gpus'
-			)
+			),
+		getLocalGpu: () => request<{ enabled: boolean }>('GET', '/api/system/local-gpu'),
+		setLocalGpu: (enabled: boolean) =>
+			request<unknown>('POST', `/api/system/local-gpu?enabled=${enabled}`)
 	}
 };

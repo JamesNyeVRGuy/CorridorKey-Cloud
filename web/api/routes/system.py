@@ -152,6 +152,21 @@ def set_vram_limit_setting(vram_limit_gb: float):
     return {"status": "ok", "vram_limit_gb": vram_limit_gb}
 
 
+@router.get("/local-gpu")
+def get_local_gpu_setting():
+    from ..worker import get_local_gpu_enabled
+
+    return {"enabled": get_local_gpu_enabled()}
+
+
+@router.post("/local-gpu")
+def set_local_gpu_setting(enabled: bool):
+    from ..worker import set_local_gpu_enabled
+
+    set_local_gpu_enabled(enabled)
+    return {"status": "ok", "enabled": enabled}
+
+
 @router.post("/unload")
 def unload_engines():
     service = get_service()
