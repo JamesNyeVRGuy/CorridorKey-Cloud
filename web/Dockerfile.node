@@ -1,31 +1,45 @@
 # Lightweight node agent image for CorridorKey distributed processing.
 #
+# Weights are NOT baked in — the node auto-downloads them from the main
+# server on first start. Just set CK_MAIN_URL and run.
+#
 # Build:  docker build -f web/Dockerfile.node -t corridorkey-node .
 # Run:    docker run --gpus all -e CK_MAIN_URL=http://host:3000 corridorkey-node
 
-FROM python:3.11-slim
+FROM ghcr.io/astral-sh/uv:0.7-python3.11-bookworm-slim
 
 WORKDIR /app
 
-# System deps for OpenCV and torch
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1 libglib2.0-0 libsm6 libxrender1 libxext6 \
-    && rm -rf /var/lib/apt/lists/*
+# Runtime deps for OpenCV and video I/O
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libgl1 \
+    libglib2.0-0 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-# Install uv for fast dependency resolution
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-# Copy only what the node agent needs
+# Install Python dependencies
 COPY pyproject.toml uv.lock ./
-COPY device_utils.py ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --extra cuda --no-install-project
+
+# Copy project source (no weights — they auto-sync from main server)
 COPY backend/ backend/
-COPY CorridorKeyModule/ CorridorKeyModule/
+COPY device_utils.py ./
 COPY web/__init__.py web/__init__.py
 COPY web/shared/ web/shared/
 COPY web/node/ web/node/
 
-# Install dependencies (CPU-only by default; use --extra cuda for GPU)
-RUN uv sync --frozen --no-dev
+# Create empty checkpoint dirs so the code doesn't error before sync
+RUN mkdir -p CorridorKeyModule/checkpoints \
+    gvm_core/weights \
+    VideoMaMaInferenceModule/checkpoints/VideoMaMa
+
+# Install the project itself
+COPY pyproject.toml ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --extra cuda
 
 ENV CK_MAIN_URL=http://localhost:3000
 ENV CK_NODE_NAME=docker-node
