@@ -57,3 +57,4 @@ BiRefNetModule/checkpoints/*
 !BiRefNetModule/checkpoints/.gitkeep
 
 site
+.hypothesis
