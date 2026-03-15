@@ -1,21 +1,20 @@
-name: Build & Publish Node Image
+name: Build & Publish Docker Images
 
 on:
   push:
     branches: [main, feat/distributed-nodes]
     paths:
-      - "web/Dockerfile.node"
-      - "web/node/**"
-      - "web/shared/**"
+      - "web/**"
       - "backend/**"
       - "device_utils.py"
       - "pyproject.toml"
       - "uv.lock"
+      - "CorridorKeyModule/**"
+      - "Dockerfile"
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/corridorkey-node
 
 permissions:
   contents: read
@@ -24,6 +23,13 @@ permissions:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: corridorkey-web
+            dockerfile: web/Dockerfile.web
+          - image: corridorkey-node
+            dockerfile: web/Dockerfile.node
     steps:
       - uses: actions/checkout@v4
 
@@ -41,7 +47,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
             type=ref,event=branch
             type=sha,prefix=
@@ -51,7 +57,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: web/Dockerfile.node
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
