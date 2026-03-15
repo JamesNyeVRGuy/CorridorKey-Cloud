@@ -347,9 +347,6 @@ class NodeAgent:
 
     def stop(self) -> None:
         self._stop.set()
-        # Unregister
-        try:
-            self._api("delete", f"/api/nodes/{self.node_id}")
-        except Exception:
-            pass
+        # Don't unregister — let the heartbeat timeout mark us offline.
+        # The user can manually remove the node from the UI if desired.
         logger.info("Node agent stopped")
