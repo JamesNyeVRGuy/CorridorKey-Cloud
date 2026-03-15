@@ -91,6 +91,7 @@ class JobSchema(BaseModel):
     current_frame: int = 0
     total_frames: int = 0
     error_message: str | None = None
+    claimed_by: str | None = None
 
 
 class JobListResponse(BaseModel):

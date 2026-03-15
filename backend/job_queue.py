@@ -59,6 +59,7 @@ class GPUJob:
     status: JobStatus = JobStatus.QUEUED
     _cancel_requested: bool = field(default=False, repr=False)
     error_message: str | None = None
+    claimed_by: str | None = None  # node_id or "local"
 
     # Progress tracking
     current_frame: int = 0
@@ -186,6 +187,7 @@ class GPUJobQueue:
                 return None
             job = self._queue.popleft()
             job.status = JobStatus.RUNNING
+            job.claimed_by = claimer_id
             self._current_job = job
             logger.info(f"Job claimed [{job.id}] by {claimer_id}: {job.job_type.value} for '{job.clip_name}'")
             return job

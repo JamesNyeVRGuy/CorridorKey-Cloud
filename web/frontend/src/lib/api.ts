@@ -53,6 +53,7 @@ export interface Job {
 	current_frame: number;
 	total_frames: number;
 	error_message: string | null;
+	claimed_by: string | null;
 }
 
 export interface JobListResponse {

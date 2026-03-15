@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from backend.job_queue import GPUJob, JobType
 
 from ..deps import get_queue, get_service
+from ..nodes import registry
 from ..schemas import (
     ExtractJobRequest,
     GVMJobRequest,
@@ -21,6 +22,12 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 
 def _job_to_schema(job: GPUJob) -> JobSchema:
+    # Resolve node ID to display name
+    claimed = job.claimed_by
+    if claimed and claimed != "local":
+        node = registry.get_node(claimed)
+        claimed = node.name if node else claimed
+
     return JobSchema(
         id=job.id,
         job_type=job.job_type.value,
@@ -29,6 +36,7 @@ def _job_to_schema(job: GPUJob) -> JobSchema:
         current_frame=job.current_frame,
         total_frames=job.total_frames,
         error_message=job.error_message,
+        claimed_by=claimed,
     )
 
 

@@ -65,6 +65,9 @@
 	</div>
 
 	<div class="job-actions">
+		{#if job.claimed_by}
+			<span class="job-node mono" title="Processed by {job.claimed_by}">{job.claimed_by}</span>
+		{/if}
 		<span class="job-id mono">{job.id}</span>
 		{#if showCancel && (job.status === 'running' || job.status === 'queued')}
 			<button class="cancel-btn" onclick={handleCancel} title="Cancel job">
@@ -155,6 +158,15 @@
 		display: flex;
 		align-items: center;
 		gap: var(--sp-2);
+	}
+
+	.job-node {
+		font-size: 9px;
+		color: var(--secondary);
+		padding: 1px 5px;
+		border: 1px solid var(--secondary-muted);
+		border-radius: 3px;
+		white-space: nowrap;
 	}
 
 	.job-id {
