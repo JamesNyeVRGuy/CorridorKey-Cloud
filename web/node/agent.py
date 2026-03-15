@@ -20,6 +20,7 @@ from device_utils import enumerate_gpus
 
 from . import config
 from .file_transfer import FileTransfer
+from .weight_sync import sync_weights
 
 logger = logging.getLogger(__name__)
 
@@ -300,12 +301,19 @@ class NodeAgent:
             proc.terminate()
 
     def run(self) -> None:
-        """Main loop — register, then poll for jobs."""
+        """Main loop — sync weights, register, then poll for jobs."""
         logger.info(f"CorridorKey Node Agent starting: {self.name} ({self.node_id})")
         logger.info(f"Main server: {self.main_url}")
         logger.info(f"GPUs: {self._gpu_indices}")
         if self.shared_storage:
             logger.info(f"Shared storage: {self.shared_storage}")
+
+        # Sync weights from main server before doing anything else
+        logger.info("Checking model weights...")
+        try:
+            sync_weights(self.main_url)
+        except Exception as e:
+            logger.warning(f"Weight sync failed (will try to proceed): {e}")
 
         # Register (retry until success)
         while not self._stop.is_set():

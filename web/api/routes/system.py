@@ -1,4 +1,4 @@
-"""System info endpoints — device, VRAM, model unloading, weight downloads."""
+"""System info endpoints — device, VRAM, model unloading, weight downloads, weight serving."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import sys
 import threading
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 
 from ..deps import get_service
 from ..schemas import DeviceResponse, VRAMResponse
@@ -168,6 +169,59 @@ def get_weights():
             if key in info:
                 info[key]["download"] = status
     return info
+
+
+# --- Weight directories for node sync ---
+_WEIGHT_DIRS: dict[str, str] = {
+    "corridorkey": os.path.join(_BASE_DIR, "CorridorKeyModule", "checkpoints"),
+    "gvm": os.path.join(_BASE_DIR, "gvm_core", "weights"),
+    "videomama": os.path.join(_BASE_DIR, "VideoMaMaInferenceModule", "checkpoints", "VideoMaMa"),
+}
+
+
+def _walk_files(root: str) -> list[dict]:
+    """Recursively list files under root with relative paths and sizes."""
+    result = []
+    if not os.path.isdir(root):
+        return result
+    for dirpath, _dirs, filenames in os.walk(root):
+        for fname in filenames:
+            fpath = os.path.join(dirpath, fname)
+            rel = os.path.relpath(fpath, root)
+            result.append({"path": rel, "size": os.path.getsize(fpath)})
+    return result
+
+
+@router.get("/weights/{name}/manifest")
+def get_weight_manifest(name: str):
+    """List all files in a weight set with relative paths and sizes.
+
+    Used by remote nodes to determine what to download.
+    """
+    root = _WEIGHT_DIRS.get(name)
+    if root is None:
+        raise HTTPException(status_code=400, detail=f"Unknown weight set: {name}")
+    files = _walk_files(root)
+    total_bytes = sum(f["size"] for f in files)
+    return {"name": name, "root": root, "files": files, "total_bytes": total_bytes}
+
+
+@router.get("/weights/{name}/file/{file_path:path}")
+def download_weight_file(name: str, file_path: str):
+    """Download a single weight file. Used by remote nodes for weight sync."""
+    root = _WEIGHT_DIRS.get(name)
+    if root is None:
+        raise HTTPException(status_code=400, detail=f"Unknown weight set: {name}")
+
+    # Prevent path traversal
+    resolved = os.path.normpath(os.path.join(root, file_path))
+    if not resolved.startswith(os.path.normpath(root)):
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+    if not os.path.isfile(resolved):
+        raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+
+    return FileResponse(resolved)
 
 
 def _run_download(name: str, cmd: list[str], target_dir: str) -> None:
