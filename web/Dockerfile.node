@@ -13,6 +13,7 @@ WORKDIR /app
 # Runtime deps for OpenCV and video I/O
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
+    git \
     ffmpeg \
     libgl1 \
     libglib2.0-0 && \
