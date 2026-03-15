@@ -14,7 +14,7 @@ from backend.natural_sort import natsorted
 
 from ..deps import get_queue, get_service
 from ..nodes import GPUSlot, NodeInfo, NodeSchedule, registry
-from ..routes.clips import _clip_to_schema, _clips_dir
+from ..routes import clips as _clips_mod
 from ..ws import manager
 
 logger = logging.getLogger(__name__)
@@ -184,7 +184,7 @@ def get_next_job(node_id: str):
     # Build job payload with file info
     clip = None
     service = get_service()
-    clips = service.scan_clips(_clips_dir)
+    clips = service.scan_clips(_clips_mod._clips_dir)
     for c in clips:
         if c.name == job.clip_name:
             clip = c
@@ -201,7 +201,7 @@ def get_next_job(node_id: str):
             "params": job.params,
             "use_shared_storage": use_shared,
             "shared_clip_root": clip.root_path if clip and use_shared else None,
-            "clip": _clip_to_schema(clip).__dict__ if clip else None,
+            "clip": _clips_mod._clip_to_schema(clip).__dict__ if clip else None,
         }
     }
 
@@ -240,7 +240,7 @@ def report_job_result(node_id: str, req: JobResultRequest):
 
     if req.status == "completed":
         service = get_service()
-        _chain_next_pipeline_step(job, queue, _clips_dir, service)
+        _chain_next_pipeline_step(job, queue, _clips_mod._clips_dir, service)
 
     return {"status": "ok"}
 
@@ -263,7 +263,7 @@ def list_clip_files(node_id: str, clip_name: str, pass_name: str):
         raise HTTPException(status_code=400, detail=f"Unknown pass: {pass_name}")
 
     service = get_service()
-    clips = service.scan_clips(_clips_dir)
+    clips = service.scan_clips(_clips_mod._clips_dir)
     clip = next((c for c in clips if c.name == clip_name), None)
     if not clip:
         raise HTTPException(status_code=404, detail=f"Clip '{clip_name}' not found")
@@ -292,7 +292,7 @@ def download_clip_file(node_id: str, clip_name: str, pass_name: str, filename: s
         raise HTTPException(status_code=400, detail=f"Unknown pass: {pass_name}")
 
     service = get_service()
-    clips = service.scan_clips(_clips_dir)
+    clips = service.scan_clips(_clips_mod._clips_dir)
     clip = next((c for c in clips if c.name == clip_name), None)
     if not clip:
         raise HTTPException(status_code=404, detail=f"Clip '{clip_name}' not found")
@@ -321,7 +321,7 @@ async def upload_result_file(node_id: str, clip_name: str, pass_name: str, filen
         raise HTTPException(status_code=400, detail=f"Unknown output pass: {pass_name}")
 
     service = get_service()
-    clips = service.scan_clips(_clips_dir)
+    clips = service.scan_clips(_clips_mod._clips_dir)
     clip = next((c for c in clips if c.name == clip_name), None)
     if not clip:
         raise HTTPException(status_code=404, detail=f"Clip '{clip_name}' not found")
