@@ -144,6 +144,65 @@ uv run uvicorn web.api.app:create_app --factory --port 3000
 - Model weights are volume-mounted and persist across Docker rebuilds.
 - The web service uses the `web` Docker Compose profile.
 
+### Render Farm (Distributed Processing)
+
+CorridorKey supports distributed GPU processing across multiple machines on your local network. Remote machines register as worker nodes, pull jobs from the main server, process them locally, and return results. No Redis, Celery, or message brokers required — just HTTP between machines.
+
+**Architecture:**
+- **Main machine** runs the WebUI and job queue as usual
+- **Remote nodes** poll for jobs every 2 seconds, process them, report results
+- Jobs show which node processed them in the Jobs panel
+- The Nodes page (`/nodes`) shows all machines, per-GPU status, and real-time VRAM
+
+**Quick start — from source:**
+
+On the main machine, start the WebUI as normal. On each remote machine with an NVIDIA GPU:
+```bash
+git clone https://github.com/nikopueringer/CorridorKey.git
+cd CorridorKey
+uv sync --group dev --extra cuda
+CK_MAIN_URL=http://<main-machine-ip>:3000 CK_NODE_NAME=my-node uv run python -m web.node
+```
+
+Model weights auto-download from the main server on first start — no manual copying needed.
+
+**Quick start — Docker (no repo checkout needed):**
+```bash
+docker run --gpus all \
+  -e CK_MAIN_URL=http://<main-machine-ip>:3000 \
+  -e CK_NODE_NAME=my-node \
+  ghcr.io/jamesnyevrguy/corridorkey-node
+```
+
+**Quick start — Docker Compose:**
+
+Copy `deploy/.env.example` to `deploy/.env`, set `CK_MAIN_URL`, then:
+```bash
+docker compose -f deploy/docker-compose.node.yml up -d
+```
+
+**Node configuration (environment variables):**
+
+| Variable | Default | Description |
+|---|---|---|
+| `CK_MAIN_URL` | `http://localhost:3000` | Main server address (required) |
+| `CK_NODE_NAME` | hostname | Display name in the Render Farm UI |
+| `CK_NODE_GPUS` | `auto` | Which GPUs to use: `auto`, `0`, `0,1` |
+| `CK_SHARED_STORAGE` | *(empty)* | Path if node mounts the same Projects directory. Skips HTTP file transfer. |
+| `CK_POLL_INTERVAL` | `2` | Seconds between job polls |
+| `CK_HEARTBEAT_INTERVAL` | `10` | Seconds between heartbeats |
+
+**Render Farm features:**
+- **Local GPU toggle** — disable local GPU processing so jobs only go to remote nodes (useful when the main machine's GPU is busy with other work)
+- **GPU in-use detection** — nodes check GPU utilization before accepting jobs; if another process (Unreal, Nuke, etc.) is using >50% GPU, the node waits
+- **Per-node scheduling** — set active hours from the Nodes UI (e.g. 20:00–08:00 for overnight rendering)
+- **Pause / resume** — instantly stop a node from accepting jobs without shutting it down
+- **Multi-GPU** — nodes with multiple GPUs can process jobs in parallel via process-per-GPU isolation
+- **Shared storage** — if both machines mount the same Projects directory, file transfer is skipped entirely (zero overhead)
+- **Auto weight sync** — nodes download missing model weights from the main server over LAN on startup
+
+**Requirements:** Remote nodes need an NVIDIA GPU with CUDA support. AMD GPUs are not supported (CorridorKey requires CUDA). WSL2 works if the Windows host has recent NVIDIA drivers (2021+).
+
 ### Docker CLI (Linux + NVIDIA GPU)
 
 If you prefer the command-line interface in Docker:
