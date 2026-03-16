@@ -25,14 +25,18 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --extra cuda --no-install-project
 
-# Copy project source (no weights — they auto-sync from main server)
+# Copy project source code (weights excluded via .dockerignore, auto-synced at runtime)
 COPY backend/ backend/
 COPY device_utils.py ./
+COPY CorridorKeyModule/ CorridorKeyModule/
+COPY gvm_core/ gvm_core/
+COPY VideoMaMaInferenceModule/ VideoMaMaInferenceModule/
+COPY BiRefNetModule/ BiRefNetModule/
 COPY web/__init__.py web/__init__.py
 COPY web/shared/ web/shared/
 COPY web/node/ web/node/
 
-# Create empty checkpoint dirs so the code doesn't error before sync
+# Ensure checkpoint dirs exist (weights auto-sync from main server)
 RUN mkdir -p CorridorKeyModule/checkpoints \
     gvm_core/weights \
     VideoMaMaInferenceModule/checkpoints/VideoMaMa
