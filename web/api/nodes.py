@@ -83,6 +83,8 @@ class NodeInfo:
     shared_storage: str | None = None  # path if node has shared storage mounted
     paused: bool = False
     schedule: NodeSchedule = field(default_factory=NodeSchedule)
+    # Empty list = accept all job types. Non-empty = only these types.
+    accepted_types: list[str] = field(default_factory=list)
 
     @property
     def is_alive(self) -> bool:
@@ -92,6 +94,12 @@ class NodeInfo:
     def can_accept_jobs(self) -> bool:
         """True if the node is alive, not paused, and within its schedule."""
         return self.is_alive and not self.paused and self.schedule.is_active_now
+
+    def accepts_job_type(self, job_type: str) -> bool:
+        """Check if this node accepts a specific job type."""
+        if not self.accepted_types:
+            return True  # empty = accept all
+        return job_type in self.accepted_types
 
     @property
     def gpu_count(self) -> int:
@@ -119,6 +127,7 @@ class NodeInfo:
             "shared_storage": self.shared_storage,
             "paused": self.paused,
             "schedule": self.schedule.to_dict(),
+            "accepted_types": self.accepted_types,
         }
 
 

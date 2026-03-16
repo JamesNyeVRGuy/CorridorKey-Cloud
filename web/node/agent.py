@@ -96,6 +96,7 @@ class NodeAgent:
             "vram_free_gb": first_gpu.get("vram_free_gb", 0),
             "capabilities": ["cuda"] if gpu_slots else ["cpu"],
             "shared_storage": self.shared_storage,
+            "accepted_types": [t.strip() for t in config.ACCEPTED_TYPES.split(",") if t.strip()],
         }
 
         try:

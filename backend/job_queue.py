@@ -170,7 +170,7 @@ class GPUJobQueue:
                 return self._queue[0]
             return None
 
-    def claim_job(self, claimer_id: str = "local") -> GPUJob | None:
+    def claim_job(self, claimer_id: str = "local", accepted_types: list[str] | None = None) -> GPUJob | None:
         """Atomically pop the next job and mark it as running.
 
         This is the preferred method for distributed workers — it combines
@@ -182,6 +182,7 @@ class GPUJobQueue:
 
         Args:
             claimer_id: Identifier of the worker claiming the job (node_id or "local").
+            accepted_types: Job types this claimer can handle. None or empty = all types.
 
         Returns:
             The claimed job, or None if no claimable job is available.
@@ -190,6 +191,9 @@ class GPUJobQueue:
             for i, job in enumerate(self._queue):
                 # Skip jobs pinned to a different node
                 if job.preferred_node and job.preferred_node != claimer_id:
+                    continue
+                # Skip jobs this claimer can't handle
+                if accepted_types and job.job_type.value not in accepted_types:
                     continue
                 del self._queue[i]
                 job.status = JobStatus.RUNNING
