@@ -41,8 +41,8 @@ class NodeAgent:
 
         self._stop = threading.Event()
         self._gpu_indices = self._resolve_gpus()
-        self._gpu_workers: dict[int, Process] = {}
-        self._result_queue: Queue = Queue()
+        self._busy_gpus: set[int] = set()  # GPU indices currently processing
+        self._busy_lock = threading.Lock()
 
     def _resolve_gpus(self) -> list[int]:
         """Determine which GPUs to use based on config."""
@@ -190,25 +190,34 @@ class NodeAgent:
         except Exception as e:
             logger.error(f"Failed to report result for {job_id}: {e}")
 
-    def _process_job(self, job_data: dict) -> None:
+    def _process_job_on_gpu(self, job_data: dict, gpu_index: int) -> None:
+        """Process a job on a specific GPU, then release the GPU slot."""
+        try:
+            self._process_job(job_data, gpu_index)
+        except Exception as e:
+            logger.exception(f"Job processing failed: {e}")
+            self._report_result(job_data["id"], "failed", str(e))
+        finally:
+            with self._busy_lock:
+                self._busy_gpus.discard(gpu_index)
+
+    def _process_job(self, job_data: dict, gpu_index: int = 0) -> None:
         """Process a job — run inference using a GPU subprocess or in-process."""
         job_id = job_data["id"]
         clip_name = job_data["clip_name"]
         use_shared = job_data.get("use_shared_storage", False)
 
-        logger.info(f"Processing job {job_id}: {job_data['job_type']} for '{clip_name}'")
+        logger.info(f"Processing job {job_id}: {job_data['job_type']} for '{clip_name}' on GPU {gpu_index}")
 
         if use_shared:
             clips_dir = str(Path(job_data.get("shared_clip_root", "")).parent)
         else:
-            # Download files to a temp directory
             clips_dir = self._download_job_files(job_data)
 
         if len(self._gpu_indices) == 1:
             self._run_single_gpu(job_data, clips_dir)
         else:
-            # Multi-GPU: use subprocess
-            self._run_subprocess_gpu(job_data, clips_dir, self._gpu_indices[0])
+            self._run_subprocess_gpu(job_data, clips_dir, gpu_index)
 
         # Upload results and clean up temp directory
         if not use_shared and clips_dir:
@@ -397,15 +406,29 @@ class NodeAgent:
         hb_thread.start()
 
         # Poll loop
-        logger.info("Polling for jobs...")
+        logger.info(f"Polling for jobs... ({len(self._gpu_indices)} GPU(s) available)")
         while not self._stop.is_set():
+            # Check if we have an idle GPU
+            with self._busy_lock:
+                idle_gpus = [g for g in self._gpu_indices if g not in self._busy_gpus]
+
+            if not idle_gpus:
+                self._stop.wait(self.poll_interval)
+                continue
+
             job_data = self._poll_job()
             if job_data:
-                try:
-                    self._process_job(job_data)
-                except Exception as e:
-                    logger.exception(f"Job processing failed: {e}")
-                    self._report_result(job_data["id"], "failed", str(e))
+                gpu_index = idle_gpus[0]
+                with self._busy_lock:
+                    self._busy_gpus.add(gpu_index)
+                # Process in a thread so we can accept more jobs on other GPUs
+                t = threading.Thread(
+                    target=self._process_job_on_gpu,
+                    args=(job_data, gpu_index),
+                    daemon=True,
+                    name=f"gpu-job-{gpu_index}",
+                )
+                t.start()
             else:
                 self._stop.wait(self.poll_interval)
 

@@ -299,18 +299,63 @@ def worker_loop(
     """Main worker loop with parallel execution.
 
     CPU jobs (extraction) run in a separate thread pool and never block GPU jobs.
-    GPU jobs are limited to one per physical GPU to prevent model thrashing —
-    CorridorKey and GVM can't share a single GPU simultaneously.
+    GPU jobs are dispatched via GPUWorkerPool (one subprocess per GPU) when
+    multiple GPUs are available, or via a thread pool for single-GPU systems.
     """
     global _running_gpu_count
 
     if max_gpu_workers <= 0:
         max_gpu_workers = _detect_local_gpu_count()
 
-    gpu_pool = ThreadPoolExecutor(max_workers=max_gpu_workers, thread_name_prefix="gpu-worker")
     cpu_pool = ThreadPoolExecutor(max_workers=max_cpu_workers, thread_name_prefix="cpu-worker")
 
-    logger.info(f"Worker pool started (GPU workers: {max_gpu_workers}, CPU workers: {max_cpu_workers})")
+    # Use subprocess pool for multi-GPU, thread pool for single-GPU
+    use_subprocess_pool = max_gpu_workers > 1
+    gpu_subprocess_pool = None
+    gpu_thread_pool = None
+
+    if use_subprocess_pool:
+        from .gpu_pool import GPUWorkerPool
+
+        gpu_subprocess_pool = GPUWorkerPool()
+
+        def _on_sp_progress(job_id, clip_name, current, total):
+            job = queue.find_job_by_id(job_id)
+            if job:
+                job.current_frame = current
+                job.total_frames = total
+            manager.send_job_progress(job_id, clip_name, current, total)
+
+        def _on_sp_warning(job_id, message):
+            manager.send_job_warning(job_id, message)
+
+        def _on_sp_completed(job_id, clip_name, clip_state):
+            job = queue.find_job_by_id(job_id)
+            if job:
+                queue.complete_job(job)
+                manager.send_job_status(job_id, JobStatus.COMPLETED.value)
+                manager.send_clip_state_changed(clip_name, clip_state)
+                _chain_next_pipeline_step(job, queue, clips_dir, service)
+
+        def _on_sp_failed(job_id, error):
+            job = queue.find_job_by_id(job_id)
+            if job:
+                queue.fail_job(job, error)
+                manager.send_job_status(job_id, JobStatus.FAILED.value, error=error)
+
+        gpu_subprocess_pool.set_callbacks(
+            on_progress=_on_sp_progress,
+            on_warning=_on_sp_warning,
+            on_completed=_on_sp_completed,
+            on_failed=_on_sp_failed,
+        )
+        gpu_subprocess_pool.start()
+        logger.info(
+            f"Worker pool started (GPU subprocesses: {gpu_subprocess_pool.gpu_count}, CPU workers: {max_cpu_workers})"
+        )
+    else:
+        gpu_thread_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="gpu-worker")
+        logger.info(f"Worker pool started (GPU workers: 1, CPU workers: {max_cpu_workers})")
 
     def _on_gpu_done(future, job=None):
         global _running_gpu_count
@@ -318,7 +363,6 @@ def worker_loop(
             _running_gpu_count -= 1
 
     while not stop_event.is_set():
-        # Peek first to check type before claiming
         peeked = queue.next_job()
         if peeked is None:
             stop_event.wait(0.5)
@@ -327,7 +371,6 @@ def worker_loop(
         is_cpu = peeked.job_type in _CPU_JOB_TYPES
 
         if not is_cpu and not _local_gpu_enabled:
-            # Local GPU disabled — leave GPU jobs for remote nodes
             stop_event.wait(1.0)
             continue
 
@@ -335,28 +378,41 @@ def worker_loop(
             job = queue.claim_job("local")
             if job is None:
                 continue
-            future = cpu_pool.submit(_run_job, service, job, queue, clips_dir)
+            cpu_pool.submit(_run_job, service, job, queue, clips_dir)
+        elif use_subprocess_pool and gpu_subprocess_pool:
+            # Multi-GPU: dispatch to subprocess pool
+            if not gpu_subprocess_pool.has_idle_gpu():
+                stop_event.wait(0.5)
+                continue
+            job = queue.claim_job("local")
+            if job is None:
+                continue
+            if not gpu_subprocess_pool.submit(job, clips_dir):
+                # All GPUs busy (race), requeue
+                queue.requeue_job(job)
+                stop_event.wait(0.5)
         else:
-            # GPU job — check VRAM and concurrency before claiming
+            # Single GPU: use thread pool
             with _running_gpu_lock:
-                if _running_gpu_count >= max_gpu_workers:
+                if _running_gpu_count >= 1:
                     stop_event.wait(0.5)
                     continue
-
                 if not _can_start_gpu_job():
                     stop_event.wait(1.0)
                     continue
-
                 job = queue.claim_job("local")
                 if job is None:
                     continue
                 _running_gpu_count += 1
 
-            future = gpu_pool.submit(_run_job, service, job, queue, clips_dir)
+            future = gpu_thread_pool.submit(_run_job, service, job, queue, clips_dir)
             future.add_done_callback(lambda f, j=job: _on_gpu_done(f, j))
 
     logger.info("Shutting down worker pools")
-    gpu_pool.shutdown(wait=True, cancel_futures=True)
+    if gpu_subprocess_pool:
+        gpu_subprocess_pool.stop()
+    if gpu_thread_pool:
+        gpu_thread_pool.shutdown(wait=True, cancel_futures=True)
     cpu_pool.shutdown(wait=True, cancel_futures=True)
     logger.info("Worker pools stopped")
 
