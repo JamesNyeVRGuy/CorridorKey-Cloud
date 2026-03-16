@@ -62,6 +62,7 @@ class GPUJob:
     claimed_by: str | None = None  # node_id or "local"
     preferred_node: str | None = None  # prefer dispatching to this node (pipeline pinning)
     started_at: float = 0  # timestamp when job started running
+    priority: int = 0  # higher = processed first
 
     # Progress tracking
     current_frame: int = 0
@@ -160,7 +161,15 @@ class GPUJobQueue:
                         return False
 
             job.status = JobStatus.QUEUED
-            self._queue.append(job)
+            # Insert sorted by priority (higher first). Same priority = FIFO.
+            inserted = False
+            for idx in range(len(self._queue)):
+                if self._queue[idx].priority < job.priority:
+                    self._queue.insert(idx, job)
+                    inserted = True
+                    break
+            if not inserted:
+                self._queue.append(job)
             logger.info(f"Job queued [{job.id}]: {job.job_type.value} for '{job.clip_name}'")
             return True
 
@@ -240,6 +249,18 @@ class GPUJobQueue:
         # Emit AFTER lock release
         if self.on_error:
             self.on_error(job.clip_name, error)
+
+    def move_job(self, job_id: str, position: int) -> bool:
+        """Move a queued job to a specific position (0 = front). Returns False if not found."""
+        with self._lock:
+            for i, job in enumerate(self._queue):
+                if job.id == job_id:
+                    del self._queue[i]
+                    pos = max(0, min(position, len(self._queue)))
+                    self._queue.insert(pos, job)
+                    logger.info(f"Job [{job_id}] moved to position {pos}")
+                    return True
+            return False
 
     def requeue_job(self, job: GPUJob) -> None:
         """Return a running job to the front of the queue (e.g. orphan reaper)."""
