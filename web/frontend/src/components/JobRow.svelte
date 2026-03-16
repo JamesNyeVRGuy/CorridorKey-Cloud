@@ -33,7 +33,18 @@
 	let logDetail = $state<string | null>(null);
 
 	async function handleCancel() {
-		await api.jobs.cancel(job.id);
+		if (job.shard_group && job.shard_total > 1) {
+			await api.jobs.cancelShardGroup(job.shard_group);
+		} else {
+			await api.jobs.cancel(job.id);
+		}
+		refreshJobs();
+	}
+
+	async function handleRetryShards() {
+		if (!job.shard_group) return;
+		await api.jobs.retryShardGroup(job.shard_group);
+		refreshJobs();
 	}
 
 	async function moveUp() {
@@ -94,8 +105,13 @@
 				<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 9.5L2.5 5.5h7L6 9.5z" fill="currentColor"/></svg>
 			</button>
 		{/if}
+		{#if isFailed && job.shard_group && job.shard_total > 1}
+			<button class="retry-btn" onclick={handleRetryShards} title="Retry failed shards">
+				<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12 7a5 5 0 11-1.5-3.5M12 2v3h-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+			</button>
+		{/if}
 		{#if showCancel && (job.status === 'running' || job.status === 'queued')}
-			<button class="cancel-btn" onclick={handleCancel} title="Cancel job">
+			<button class="cancel-btn" onclick={handleCancel} title={job.shard_total > 1 ? 'Cancel all shards' : 'Cancel job'}>
 				<svg width="14" height="14" viewBox="0 0 14 14" fill="none">
 					<path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
 				</svg>
@@ -231,6 +247,26 @@
 	.move-btn:disabled {
 		opacity: 0.3;
 		cursor: default;
+	}
+
+	.retry-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 26px;
+		height: 26px;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--border);
+		background: var(--surface-3);
+		color: var(--text-secondary);
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.retry-btn:hover {
+		color: var(--state-complete);
+		border-color: var(--state-complete);
+		background: rgba(93, 216, 121, 0.1);
 	}
 
 	.cancel-btn {
