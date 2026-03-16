@@ -23,6 +23,7 @@ services:
       - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
       - CK_CLIPS_DIR=/app/Projects
+      - CK_AUTH_TOKEN=${CK_AUTH_TOKEN:-}
     volumes:
       - ${CK_PROJECTS_DIR:-./Projects}:/app/Projects
       - ${CK_WEIGHTS_DIR:-./weights}/corridorkey:/app/CorridorKeyModule/checkpoints

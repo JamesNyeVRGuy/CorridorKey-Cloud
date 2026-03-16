@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import socket
 import tempfile
 import threading
@@ -35,7 +36,7 @@ class NodeAgent:
         self.shared_storage = config.SHARED_STORAGE or None
         self.poll_interval = config.POLL_INTERVAL
         self.heartbeat_interval = config.HEARTBEAT_INTERVAL
-        self.file_transfer = FileTransfer(self.main_url, self.node_id)
+        self.file_transfer = FileTransfer(self.main_url, self.node_id, auth_token=config.AUTH_TOKEN)
 
         self._stop = threading.Event()
         self._gpu_indices = self._resolve_gpus()
@@ -61,7 +62,10 @@ class NodeAgent:
             return "127.0.0.1"
 
     def _api(self, method: str, path: str, **kwargs) -> httpx.Response:
-        with httpx.Client(timeout=30) as client:
+        headers = kwargs.pop("headers", {})
+        if config.AUTH_TOKEN:
+            headers["Authorization"] = f"Bearer {config.AUTH_TOKEN}"
+        with httpx.Client(timeout=30, headers=headers) as client:
             return getattr(client, method)(f"{self.main_url}{path}", **kwargs)
 
     def _register(self) -> bool:
@@ -170,9 +174,10 @@ class NodeAgent:
             # Multi-GPU: use subprocess
             self._run_subprocess_gpu(job_data, clips_dir, self._gpu_indices[0])
 
-        # Upload results if not using shared storage
+        # Upload results and clean up temp directory
         if not use_shared and clips_dir:
             self._upload_results(clip_name, clips_dir)
+            self._cleanup_temp(clips_dir)
 
     def _download_job_files(self, job_data: dict) -> str:
         """Download input files for a job. Returns the clips_dir path."""
@@ -209,6 +214,16 @@ class NodeAgent:
         for pass_name, dir_path in output_map.items():
             if os.path.isdir(dir_path):
                 self.file_transfer.upload_directory(clip_name, pass_name, dir_path)
+
+    def _cleanup_temp(self, clips_dir: str) -> None:
+        """Remove temp directory after upload. Only deletes dirs we created."""
+        if not clips_dir.startswith(tempfile.gettempdir()):
+            return  # safety: don't delete non-temp paths
+        try:
+            shutil.rmtree(clips_dir)
+            logger.debug(f"Cleaned up temp dir: {clips_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to clean temp dir {clips_dir}: {e}")
 
     def _run_single_gpu(self, job_data: dict, clips_dir: str) -> None:
         """Run job in-process on a single GPU."""

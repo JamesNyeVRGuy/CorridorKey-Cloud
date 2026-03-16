@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.project import projects_root
 
 from .deps import get_queue, get_service
+from .reaper import start_reaper
 from .routes import clips, jobs, nodes, preview, projects, system, upload
 from .worker import start_worker
 from .ws import manager, websocket_endpoint
@@ -49,16 +50,19 @@ async def lifespan(app: FastAPI):
 
     queue = get_queue()
     worker_thread, stop_event = start_worker(service, queue, clips_dir)
+    reaper_thread = start_reaper(queue, stop_event)
 
     app.state.clips_dir = clips_dir
     app.state.worker_thread = worker_thread
+    app.state.reaper_thread = reaper_thread
     app.state.stop_event = stop_event
 
     yield
 
     stop_event.set()
     worker_thread.join(timeout=5)
-    logger.info("Worker thread joined")
+    reaper_thread.join(timeout=5)
+    logger.info("Worker and reaper threads joined")
 
 
 def create_app() -> FastAPI:

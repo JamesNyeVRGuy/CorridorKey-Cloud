@@ -25,6 +25,7 @@ services:
       - CK_NODE_NAME=${CK_NODE_NAME:-docker-node}
       - CK_NODE_GPUS=${CK_NODE_GPUS:-auto}
       - CK_SHARED_STORAGE=${CK_SHARED_STORAGE:-}
+      - CK_AUTH_TOKEN=${CK_AUTH_TOKEN:-}
     volumes:
       # Mount shared projects directory if using shared storage.
       # Leave CK_SHARED_STORAGE empty to use HTTP file transfer instead.
