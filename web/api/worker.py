@@ -234,21 +234,36 @@ _running_gpu_count = 0
 _running_gpu_lock = threading.Lock()
 
 
+def _detect_local_gpu_count() -> int:
+    """Detect number of local GPUs for worker concurrency."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return max(1, torch.cuda.device_count())
+    except Exception:
+        pass
+    return 1
+
+
 def worker_loop(
     service: CorridorKeyService,
     queue: GPUJobQueue,
     clips_dir: str,
     stop_event: threading.Event,
-    max_gpu_workers: int = 2,
+    max_gpu_workers: int = 0,  # 0 = auto-detect (1 per GPU)
     max_cpu_workers: int = 4,
 ) -> None:
     """Main worker loop with parallel execution.
 
     CPU jobs (extraction) run in a separate thread pool and never block GPU jobs.
-    GPU jobs check VRAM availability before starting. Multiple GPU jobs can run
-    simultaneously if VRAM limit allows.
+    GPU jobs are limited to one per physical GPU to prevent model thrashing —
+    CorridorKey and GVM can't share a single GPU simultaneously.
     """
     global _running_gpu_count
+
+    if max_gpu_workers <= 0:
+        max_gpu_workers = _detect_local_gpu_count()
 
     gpu_pool = ThreadPoolExecutor(max_workers=max_gpu_workers, thread_name_prefix="gpu-worker")
     cpu_pool = ThreadPoolExecutor(max_workers=max_cpu_workers, thread_name_prefix="cpu-worker")
