@@ -229,7 +229,10 @@ class NodeAgent:
             self._cleanup_temp(clips_dir)
 
     def _download_job_files(self, job_data: dict) -> str:
-        """Download input files for a job. Returns the clips_dir path."""
+        """Download input files for a job. Returns the clips_dir path.
+
+        Downloads multiple passes in parallel to reduce transfer time.
+        """
         clip_name = job_data["clip_name"]
         job_type = job_data["job_type"]
         params = job_data.get("params", {})
@@ -241,14 +244,31 @@ class NodeAgent:
         base_dir = tempfile.mkdtemp(prefix=f"ck-node-{clip_name}-")
         clip_dir = os.path.join(base_dir, clip_name)
 
+        # Build list of passes to download
+        passes: list[tuple[str, tuple[int, int] | None]] = []
         if job_type == "inference":
-            self.file_transfer.download_pass(clip_name, "input", clip_dir, frame_range=fr)
-            self.file_transfer.download_pass(clip_name, "alpha", clip_dir, frame_range=fr)
+            passes = [("input", fr), ("alpha", fr)]
         elif job_type == "gvm_alpha":
-            self.file_transfer.download_pass(clip_name, "input", clip_dir)
+            passes = [("input", None)]
         elif job_type == "videomama_alpha":
-            self.file_transfer.download_pass(clip_name, "input", clip_dir)
-            self.file_transfer.download_pass(clip_name, "mask", clip_dir)
+            passes = [("input", None), ("mask", None)]
+
+        # Download passes in parallel
+        if len(passes) > 1:
+            threads = []
+            for pass_name, pass_fr in passes:
+                t = threading.Thread(
+                    target=self.file_transfer.download_pass,
+                    args=(clip_name, pass_name, clip_dir),
+                    kwargs={"frame_range": pass_fr},
+                    daemon=True,
+                )
+                t.start()
+                threads.append(t)
+            for t in threads:
+                t.join()
+        elif passes:
+            self.file_transfer.download_pass(clip_name, passes[0][0], clip_dir, frame_range=passes[0][1])
 
         return base_dir
 
