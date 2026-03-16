@@ -1,7 +1,6 @@
 <script lang="ts">
 	import type { Job } from '$lib/api';
 	import { api } from '$lib/api';
-	import { jobStartedAt } from '$lib/stores/jobs';
 	import ProgressBar from './ProgressBar.svelte';
 
 	let { job, showCancel = false }: { job: Job; showCancel?: boolean } = $props();
@@ -58,7 +57,7 @@
 	<div class="job-info">
 		<span class="job-clip">{job.clip_name}</span>
 		{#if isRunning}
-			<ProgressBar current={job.current_frame} total={job.total_frames} startedAt={$jobStartedAt} />
+			<ProgressBar current={job.current_frame} total={job.total_frames} startedAt={job.started_at > 0 ? job.started_at * 1000 : null} />
 		{:else}
 			<span class="job-status mono" style="color: {statusColor}">{job.status.toUpperCase()}</span>
 		{/if}

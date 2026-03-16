@@ -38,6 +38,7 @@ def _save_history_snapshot(queue) -> None:
                 "claimed_by": j.claimed_by,
                 "current_frame": j.current_frame,
                 "total_frames": j.total_frames,
+                "started_at": j.started_at,
             }
             for j in history
         ]
@@ -93,6 +94,7 @@ async def lifespan(app: FastAPI):
             job.claimed_by = jd.get("claimed_by")
             job.current_frame = jd.get("current_frame", 0)
             job.total_frames = jd.get("total_frames", 0)
+            job.started_at = jd.get("started_at", 0)
             queue._history.append(job)
         logger.info(f"Restored {len(saved_history)} jobs from history")
 

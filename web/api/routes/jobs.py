@@ -37,6 +37,7 @@ def _job_to_schema(job: GPUJob) -> JobSchema:
         total_frames=job.total_frames,
         error_message=job.error_message,
         claimed_by=claimed,
+        started_at=job.started_at,
     )
 
 

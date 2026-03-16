@@ -61,6 +61,7 @@ class GPUJob:
     error_message: str | None = None
     claimed_by: str | None = None  # node_id or "local"
     preferred_node: str | None = None  # prefer dispatching to this node (pipeline pinning)
+    started_at: float = 0  # timestamp when job started running
 
     # Progress tracking
     current_frame: int = 0
@@ -195,9 +196,12 @@ class GPUJobQueue:
                 # Skip jobs this claimer can't handle
                 if accepted_types and job.job_type.value not in accepted_types:
                     continue
+                import time
+
                 del self._queue[i]
                 job.status = JobStatus.RUNNING
                 job.claimed_by = claimer_id
+                job.started_at = time.time()
                 self._current_job = job
                 logger.info(f"Job claimed [{job.id}] by {claimer_id}: {job.job_type.value} for '{job.clip_name}'")
                 return job
