@@ -94,7 +94,8 @@ class JobSchema(BaseModel):
 
 
 class JobListResponse(BaseModel):
-    current: JobSchema | None = None
+    current: JobSchema | None = None  # first running job (backward compat)
+    running: list[JobSchema] = []  # all running jobs
     queued: list[JobSchema] = []
     history: list[JobSchema] = []
 

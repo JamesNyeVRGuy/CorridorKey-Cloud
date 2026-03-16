@@ -57,6 +57,7 @@ export interface Job {
 
 export interface JobListResponse {
 	current: Job | null;
+	running: Job[];
 	queued: Job[];
 	history: Job[];
 }

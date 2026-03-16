@@ -2,7 +2,10 @@ import { writable, derived, get } from 'svelte/store';
 import type { Job } from '$lib/api';
 import { api } from '$lib/api';
 
+/** First running job (backward compat for activity bar). */
 export const currentJob = writable<Job | null>(null);
+/** All currently running jobs. */
+export const runningJobs = writable<Job[]>([]);
 export const queuedJobs = writable<Job[]>([]);
 export const jobHistory = writable<Job[]>([]);
 
@@ -10,8 +13,8 @@ export const jobHistory = writable<Job[]>([]);
 export const jobStartedAt = writable<number | null>(null);
 
 export const activeJobCount = derived(
-	[currentJob, queuedJobs],
-	([$current, $queued]) => ($current ? 1 : 0) + $queued.length
+	[runningJobs, queuedJobs],
+	([$running, $queued]) => $running.length + $queued.length
 );
 
 let refreshPending = false;
@@ -23,6 +26,7 @@ export async function refreshJobs() {
 		const res = await api.jobs.list();
 		const prev = get(currentJob);
 		currentJob.set(res.current);
+		runningJobs.set(res.running ?? (res.current ? [res.current] : []));
 		queuedJobs.set(res.queued);
 		jobHistory.set(res.history);
 
@@ -46,6 +50,18 @@ export async function refreshJobs() {
 export function updateJobFromWS(jobId: string, updates: Partial<Job>): boolean {
 	let found = false;
 
+	// Check running jobs
+	runningJobs.update((jobs) =>
+		jobs.map((j) => {
+			if (j.id === jobId) {
+				found = true;
+				return { ...j, ...updates };
+			}
+			return j;
+		})
+	);
+
+	// Also update currentJob for backward compat
 	currentJob.update((j) => {
 		if (j && j.id === jobId) {
 			found = true;

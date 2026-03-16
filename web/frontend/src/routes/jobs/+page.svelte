@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { currentJob, queuedJobs, jobHistory, refreshJobs } from '$lib/stores/jobs';
+	import { currentJob, runningJobs, queuedJobs, jobHistory, refreshJobs } from '$lib/stores/jobs';
 	import { api } from '$lib/api';
 	import JobRow from '../../components/JobRow.svelte';
 
@@ -15,7 +15,7 @@
 		}
 	}
 
-	let hasActive = $derived($currentJob !== null || $queuedJobs.length > 0);
+	let hasActive = $derived($runningJobs.length > 0 || $queuedJobs.length > 0);
 </script>
 
 <svelte:head>
@@ -40,12 +40,14 @@
 		</div>
 	</div>
 
-	<!-- Current Job -->
-	{#if $currentJob}
+	<!-- Running Jobs -->
+	{#if $runningJobs.length > 0}
 		<section class="section">
-			<h2 class="section-title mono">RUNNING</h2>
+			<h2 class="section-title mono">RUNNING <span class="count">{$runningJobs.length}</span></h2>
 			<div class="job-list">
-				<JobRow job={$currentJob} showCancel />
+				{#each $runningJobs as job (job.id)}
+					<JobRow {job} showCancel />
+				{/each}
 			</div>
 		</section>
 	{/if}
@@ -74,7 +76,7 @@
 		</section>
 	{/if}
 
-	{#if !$currentJob && $queuedJobs.length === 0 && $jobHistory.length === 0}
+	{#if $runningJobs.length === 0 && $queuedJobs.length === 0 && $jobHistory.length === 0}
 		<div class="empty-state">
 			<svg width="48" height="48" viewBox="0 0 48 48" fill="none">
 				<path d="M8 16l16 9.5L40 16M8 24l16 9.5L40 24M8 32l16 9.5L40 32M8 8L24 17.5 40 8 24 0 8 8z" stroke="var(--text-tertiary)" stroke-width="1.5" stroke-linejoin="round"/>

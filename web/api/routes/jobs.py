@@ -35,9 +35,10 @@ def _job_to_schema(job: GPUJob) -> JobSchema:
 @router.get("", response_model=JobListResponse)
 def list_jobs():
     queue = get_queue()
-    current = queue.current_job
+    running = queue.running_jobs
     return JobListResponse(
-        current=_job_to_schema(current) if current else None,
+        current=_job_to_schema(running[0]) if running else None,
+        running=[_job_to_schema(j) for j in running],
         queued=[_job_to_schema(j) for j in queue.queue_snapshot],
         history=[_job_to_schema(j) for j in queue.history_snapshot],
     )

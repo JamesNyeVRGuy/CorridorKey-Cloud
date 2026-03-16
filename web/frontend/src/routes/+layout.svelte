@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { connect, disconnect, onMessage, isConnected } from '$lib/ws';
 	import { refreshClips } from '$lib/stores/clips';
-	import { refreshJobs, updateJobFromWS, currentJob, activeJobCount } from '$lib/stores/jobs';
+	import { refreshJobs, updateJobFromWS, currentJob, runningJobs, activeJobCount } from '$lib/stores/jobs';
 	import { refreshDevice, refreshVRAM, device, vram, wsConnected } from '$lib/stores/system';
 	import VramMeter from '../components/VramMeter.svelte';
 	import ToastContainer from '../components/ToastContainer.svelte';
@@ -121,23 +121,23 @@
 	</nav>
 
 	<main class="content">
-		{#if $currentJob}
+		{#each $runningJobs as rJob (rJob.id)}
 			<div class="activity-bar">
 				<div class="activity-info mono">
-					<span class="activity-type">{$currentJob.job_type.replace('_', ' ')}</span>
-					<span class="activity-clip">{$currentJob.clip_name}</span>
-					{#if $currentJob.total_frames > 0}
-						<span class="activity-pct">{Math.round(($currentJob.current_frame / $currentJob.total_frames) * 100)}%</span>
+					<span class="activity-type">{rJob.job_type.replace('_', ' ')}</span>
+					<span class="activity-clip">{rJob.clip_name}</span>
+					{#if rJob.total_frames > 0}
+						<span class="activity-pct">{Math.round((rJob.current_frame / rJob.total_frames) * 100)}%</span>
 					{/if}
 				</div>
 				<div class="activity-track">
 					<div
 						class="activity-fill"
-						style="width: {$currentJob.total_frames > 0 ? ($currentJob.current_frame / $currentJob.total_frames) * 100 : 0}%"
+						style="width: {rJob.total_frames > 0 ? (rJob.current_frame / rJob.total_frames) * 100 : 0}%"
 					></div>
 				</div>
 			</div>
-		{/if}
+		{/each}
 		{@render children()}
 	</main>
 </div>
