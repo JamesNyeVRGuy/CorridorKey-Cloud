@@ -184,7 +184,13 @@ export const api = {
 		move: (jobId: string, position: number) =>
 			request<unknown>('POST', `/api/jobs/${jobId}/move?position=${position}`),
 		setPriority: (jobId: string, priority: number) =>
-			request<unknown>('POST', `/api/jobs/${jobId}/priority?priority=${priority}`)
+			request<unknown>('POST', `/api/jobs/${jobId}/priority?priority=${priority}`),
+		shardGroupProgress: (groupId: string) =>
+			request<{ shard_group: string; total_shards: number; completed: number; running: number; failed: number; current_frame: number; total_frames: number }>('GET', `/api/jobs/shard-group/${groupId}`),
+		cancelShardGroup: (groupId: string) =>
+			request<unknown>('DELETE', `/api/jobs/shard-group/${groupId}`),
+		retryShardGroup: (groupId: string) =>
+			request<unknown>('POST', `/api/jobs/shard-group/${groupId}/retry`)
 	},
 	system: {
 		device: () => request<DeviceInfo>('GET', '/api/system/device'),

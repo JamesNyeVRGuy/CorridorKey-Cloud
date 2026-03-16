@@ -385,6 +385,48 @@ class GPUJobQueue:
                 "total_frames": total,
             }
 
+    def cancel_shard_group(self, shard_group: str) -> int:
+        """Cancel all shards in a group. Returns the number cancelled."""
+        cancelled = 0
+        with self._lock:
+            # Cancel queued shards
+            to_remove = [j for j in self._queue if j.shard_group == shard_group]
+            for job in to_remove:
+                self._queue.remove(job)
+                job.status = JobStatus.CANCELLED
+                self._history.append(job)
+                cancelled += 1
+            # Request cancel on running shards
+            for job in self._running_jobs:
+                if job.shard_group == shard_group and job.status == JobStatus.RUNNING:
+                    job.request_cancel()
+                    cancelled += 1
+        if cancelled:
+            logger.info(f"Cancelled {cancelled} shards in group {shard_group}")
+        return cancelled
+
+    def retry_failed_shards(self, shard_group: str) -> list["GPUJob"]:
+        """Re-submit failed shards from a group. Returns new jobs."""
+        new_jobs = []
+        with self._lock:
+            failed = [j for j in self._history if j.shard_group == shard_group and j.status == JobStatus.FAILED]
+            for old in failed:
+                job = GPUJob(
+                    job_type=old.job_type,
+                    clip_name=old.clip_name,
+                    params=dict(old.params),
+                    shard_group=old.shard_group,
+                    shard_index=old.shard_index,
+                    shard_total=old.shard_total,
+                )
+                new_jobs.append(job)
+        # Submit outside lock
+        submitted = []
+        for job in new_jobs:
+            if self.submit(job):
+                submitted.append(job)
+        return submitted
+
     def clear_history(self) -> None:
         """Clear job history (for UI reset)."""
         with self._lock:

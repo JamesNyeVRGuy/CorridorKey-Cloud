@@ -183,6 +183,27 @@ def get_shard_group_progress(group_id: str):
     return queue.shard_group_progress(group_id)
 
 
+@router.delete("/shard-group/{group_id}")
+def cancel_shard_group(group_id: str):
+    """Cancel all shards in a group."""
+    queue = get_queue()
+    count = queue.cancel_shard_group(group_id)
+    return {"status": "cancelled", "shard_group": group_id, "cancelled": count}
+
+
+@router.post("/shard-group/{group_id}/retry")
+def retry_shard_group(group_id: str):
+    """Re-submit failed shards from a group."""
+    queue = get_queue()
+    new_jobs = queue.retry_failed_shards(group_id)
+    return {
+        "status": "retried",
+        "shard_group": group_id,
+        "resubmitted": len(new_jobs),
+        "jobs": [_job_to_schema(j) for j in new_jobs],
+    }
+
+
 @router.post("/gvm", response_model=list[JobSchema])
 def submit_gvm(req: GVMJobRequest):
     queue = get_queue()

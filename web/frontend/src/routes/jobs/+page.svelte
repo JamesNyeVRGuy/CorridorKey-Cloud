@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { currentJob, runningJobs, queuedJobs, jobHistory, refreshJobs } from '$lib/stores/jobs';
 	import { api } from '$lib/api';
+	import type { Job } from '$lib/api';
 	import JobRow from '../../components/JobRow.svelte';
+	import ProgressBar from '../../components/ProgressBar.svelte';
 
 	let cancelling = $state(false);
+	let expandedGroups = $state<Set<string>>(new Set());
 
 	async function cancelAll() {
 		cancelling = true;
@@ -14,6 +17,63 @@
 			cancelling = false;
 		}
 	}
+
+	function toggleGroup(groupId: string) {
+		const next = new Set(expandedGroups);
+		if (next.has(groupId)) next.delete(groupId);
+		else next.add(groupId);
+		expandedGroups = next;
+	}
+
+	interface ShardGroup {
+		group_id: string;
+		clip_name: string;
+		shards: Job[];
+		current_frame: number;
+		total_frames: number;
+		completed: number;
+		running: number;
+		failed: number;
+	}
+
+	function groupShards(jobs: Job[]): (Job | ShardGroup)[] {
+		const groups = new Map<string, Job[]>();
+		const singles: Job[] = [];
+
+		for (const job of jobs) {
+			if (job.shard_group && job.shard_total > 1) {
+				const list = groups.get(job.shard_group) ?? [];
+				list.push(job);
+				groups.set(job.shard_group, list);
+			} else {
+				singles.push(job);
+			}
+		}
+
+		const result: (Job | ShardGroup)[] = [];
+		for (const [group_id, shards] of groups) {
+			result.push({
+				group_id,
+				clip_name: shards[0].clip_name,
+				shards: shards.sort((a, b) => a.shard_index - b.shard_index),
+				current_frame: shards.reduce((s, j) => s + j.current_frame, 0),
+				total_frames: shards.reduce((s, j) => s + j.total_frames, 0),
+				completed: shards.filter((j) => j.status === 'completed').length,
+				running: shards.filter((j) => j.status === 'running').length,
+				failed: shards.filter((j) => j.status === 'failed').length,
+			});
+		}
+		result.push(...singles);
+		return result;
+	}
+
+	function isShardGroup(item: Job | ShardGroup): item is ShardGroup {
+		return 'group_id' in item;
+	}
+
+	let groupedRunning = $derived(groupShards($runningJobs));
+	let groupedQueued = $derived(groupShards($queuedJobs));
+	let groupedHistory = $derived(groupShards($jobHistory));
 
 	let hasActive = $derived($runningJobs.length > 0 || $queuedJobs.length > 0);
 </script>
@@ -45,8 +105,28 @@
 		<section class="section">
 			<h2 class="section-title mono">RUNNING <span class="count">{$runningJobs.length}</span></h2>
 			<div class="job-list">
-				{#each $runningJobs as job (job.id)}
-					<JobRow {job} showCancel />
+				{#each groupedRunning as item}
+					{#if isShardGroup(item)}
+						{@const g = item}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div class="shard-group" onclick={() => toggleGroup(g.group_id)}>
+							<div class="shard-group-header">
+								<span class="type-dot" style="background: var(--state-running); box-shadow: 0 0 6px var(--state-running)"></span>
+								<span class="shard-group-label mono">SHARDED</span>
+								<span class="shard-group-clip">{g.clip_name}</span>
+								<span class="shard-group-info mono">{g.completed}/{g.shards.length} GPUs done</span>
+								<span class="shard-group-expand mono">{expandedGroups.has(g.group_id) ? '▲' : '▼'}</span>
+							</div>
+							<ProgressBar current={g.current_frame} total={g.total_frames} />
+						</div>
+						{#if expandedGroups.has(g.group_id)}
+							{#each g.shards as job (job.id)}
+								<JobRow {job} showCancel />
+							{/each}
+						{/if}
+					{:else}
+						<JobRow job={item} showCancel />
+					{/if}
 				{/each}
 			</div>
 		</section>
@@ -57,8 +137,27 @@
 		<section class="section">
 			<h2 class="section-title mono">QUEUED <span class="count">{$queuedJobs.length}</span></h2>
 			<div class="job-list">
-				{#each $queuedJobs as job, i (job.id)}
-					<JobRow {job} showCancel queueIndex={i} />
+				{#each groupedQueued as item, i}
+					{#if isShardGroup(item)}
+						{@const g = item}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div class="shard-group" onclick={() => toggleGroup(g.group_id)}>
+							<div class="shard-group-header">
+								<span class="type-dot" style="background: var(--state-queued)"></span>
+								<span class="shard-group-label mono">SHARDED</span>
+								<span class="shard-group-clip">{g.clip_name}</span>
+								<span class="shard-group-info mono">{g.shards.length} shards queued</span>
+								<span class="shard-group-expand mono">{expandedGroups.has(g.group_id) ? '▲' : '▼'}</span>
+							</div>
+						</div>
+						{#if expandedGroups.has(g.group_id)}
+							{#each g.shards as job, j (job.id)}
+								<JobRow {job} showCancel queueIndex={j} />
+							{/each}
+						{/if}
+					{:else}
+						<JobRow job={item} showCancel queueIndex={i} />
+					{/if}
 				{/each}
 			</div>
 		</section>
@@ -69,8 +168,27 @@
 		<section class="section">
 			<h2 class="section-title mono">HISTORY</h2>
 			<div class="job-list">
-				{#each $jobHistory as job (job.id)}
-					<JobRow {job} />
+				{#each groupedHistory as item}
+					{#if isShardGroup(item)}
+						{@const g = item}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div class="shard-group" onclick={() => toggleGroup(g.group_id)}>
+							<div class="shard-group-header">
+								<span class="type-dot" style="background: {g.failed > 0 ? 'var(--state-failed)' : 'var(--state-complete)'}"></span>
+								<span class="shard-group-label mono">SHARDED</span>
+								<span class="shard-group-clip">{g.clip_name}</span>
+								<span class="shard-group-info mono">{g.completed}/{g.shards.length} done{g.failed > 0 ? `, ${g.failed} failed` : ''}</span>
+								<span class="shard-group-expand mono">{expandedGroups.has(g.group_id) ? '▲' : '▼'}</span>
+							</div>
+						</div>
+						{#if expandedGroups.has(g.group_id)}
+							{#each g.shards as job (job.id)}
+								<JobRow {job} />
+							{/each}
+						{/if}
+					{:else}
+						<JobRow job={item} />
+					{/if}
 				{/each}
 			</div>
 		</section>
@@ -189,6 +307,61 @@
 		border-radius: 0 0 8px 8px;
 		overflow: hidden;
 		background: var(--surface-1);
+	}
+
+	.shard-group {
+		padding: var(--sp-3) var(--sp-4);
+		border-bottom: 1px solid var(--border-subtle);
+		cursor: pointer;
+		transition: background 0.15s;
+		background: linear-gradient(90deg, rgba(0, 154, 218, 0.04), transparent);
+		border-left: 3px solid var(--secondary);
+	}
+
+	.shard-group:hover {
+		background: var(--surface-2);
+	}
+
+	.shard-group-header {
+		display: flex;
+		align-items: center;
+		gap: var(--sp-2);
+		margin-bottom: var(--sp-2);
+	}
+
+	.type-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.shard-group-label {
+		font-size: 9px;
+		font-weight: 600;
+		color: var(--secondary);
+		padding: 1px 5px;
+		border: 1px solid var(--secondary-muted);
+		border-radius: 3px;
+		letter-spacing: 0.06em;
+	}
+
+	.shard-group-clip {
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+
+	.shard-group-info {
+		margin-left: auto;
+		font-size: 10px;
+		color: var(--text-secondary);
+	}
+
+	.shard-group-expand {
+		font-size: 9px;
+		color: var(--text-tertiary);
+		margin-left: var(--sp-1);
 	}
 
 	.empty-state {
