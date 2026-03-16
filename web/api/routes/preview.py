@@ -28,6 +28,10 @@ _clips_dir: str = ""
 # Cache dir for stitched preview videos
 _cache_dir: str = ""
 
+# Track video encode progress: key → {status, current, total, error}
+_encode_progress: dict[str, dict] = {}
+_encode_progress_lock = threading.Lock()
+
 
 def set_clips_dir(path: str) -> None:
     global _clips_dir, _cache_dir
@@ -163,6 +167,27 @@ def _cache_key(clip_root: str, pass_name: str) -> str:
     return hashlib.md5(raw.encode()).hexdigest()[:12]
 
 
+@router.get("/{clip_name}/{pass_name}/video/progress")
+def get_video_progress(clip_name: str, pass_name: str, fps: int = 24):
+    """Check video encode progress. Returns status, current frame, total frames."""
+    clip_root = _find_clip_root(clip_name)
+    if clip_root is None:
+        return {"status": "error", "detail": "Clip not found"}
+
+    key = _cache_key(clip_root, pass_name)
+    cache_path = os.path.join(_cache_dir, f"{clip_name}_{pass_name}_{key}.mp4")
+
+    if os.path.isfile(cache_path):
+        return {"status": "ready"}
+
+    with _encode_progress_lock:
+        progress = _encode_progress.get(key)
+
+    if progress is None:
+        return {"status": "idle"}
+    return progress
+
+
 @router.get("/{clip_name}/{pass_name}/video")
 def get_preview_video(clip_name: str, pass_name: str, fps: int = 24):
     """Stitch frames into an MP4 for smooth browser playback. Cached."""
@@ -198,21 +223,21 @@ def get_preview_video(clip_name: str, pass_name: str, fps: int = 24):
             return FileResponse(cache_path, media_type="video/mp4", filename=f"{clip_name}_{pass_name}.mp4")
         raise HTTPException(status_code=500, detail="Concurrent encode failed")
 
+    total_frames = len(files)
+    with _encode_progress_lock:
+        _encode_progress[key] = {"status": "encoding", "current": 0, "total": total_frames}
+
     concat_path = os.path.join(_cache_dir, f"{key}_concat.txt")
     try:
         with open(concat_path, "w") as f:
             for fname in files:
                 fpath = os.path.join(target_dir, fname)
-                # For EXR files, we need to convert first — ffmpeg may not handle them well
-                # Use a glob pattern if filenames are sequential, otherwise concat
                 f.write(f"file '{fpath}'\n")
                 f.write(f"duration {1 / fps}\n")
 
-        # Check if files are EXR (ffmpeg needs special handling)
         is_exr = files[0].lower().endswith(".exr")
 
         if is_exr:
-            # Convert via OpenCV → temp PNGs → ffmpeg
             with tempfile.TemporaryDirectory() as tmpdir:
                 for i, fname in enumerate(files):
                     fpath = os.path.join(target_dir, fname)
@@ -221,6 +246,11 @@ def get_preview_video(clip_name: str, pass_name: str, fps: int = 24):
                         out = (np.clip(img, 0.0, 1.0) * 255.0).astype(np.uint8)
                         out_bgr = cv2.cvtColor(out, cv2.COLOR_RGB2BGR)
                         cv2.imwrite(os.path.join(tmpdir, f"{i:06d}.png"), out_bgr)
+                    with _encode_progress_lock:
+                        _encode_progress[key] = {"status": "encoding", "current": i + 1, "total": total_frames}
+
+                with _encode_progress_lock:
+                    _encode_progress[key] = {"status": "stitching", "current": total_frames, "total": total_frames}
 
                 cmd = [
                     "ffmpeg",
@@ -243,7 +273,8 @@ def get_preview_video(clip_name: str, pass_name: str, fps: int = 24):
                 if result.returncode != 0:
                     raise RuntimeError(result.stderr.decode()[-300:])
         else:
-            # Direct ffmpeg from image files
+            with _encode_progress_lock:
+                _encode_progress[key] = {"status": "stitching", "current": total_frames, "total": total_frames}
             cmd = [
                 "ffmpeg",
                 "-y",
@@ -269,11 +300,16 @@ def get_preview_video(clip_name: str, pass_name: str, fps: int = 24):
 
     except Exception as e:
         logger.error(f"Video stitch failed: {e}")
+        with _encode_progress_lock:
+            _encode_progress[key] = {"status": "error", "detail": str(e)}
         raise HTTPException(status_code=500, detail=f"Failed to create preview video: {e}") from e
     finally:
         encode_lock.release()
         if os.path.isfile(concat_path):
             os.unlink(concat_path)
+
+    with _encode_progress_lock:
+        _encode_progress.pop(key, None)
 
     return FileResponse(cache_path, media_type="video/mp4", filename=f"{clip_name}_{pass_name}.mp4")
 

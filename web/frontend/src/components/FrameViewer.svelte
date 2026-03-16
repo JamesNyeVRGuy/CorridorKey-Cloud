@@ -35,6 +35,51 @@
 	let playbackFps = $state(24);
 	let comparePass = $state('input');
 
+	// Video encode progress
+	let encodeStatus = $state<string>('idle'); // idle, encoding, stitching, ready, error
+	let encodeCurrent = $state(0);
+	let encodeTotal = $state(0);
+	let encodePollTimer: ReturnType<typeof setInterval> | null = null;
+
+	function startEncodePolling() {
+		stopEncodePolling();
+		encodeStatus = 'encoding';
+		encodeCurrent = 0;
+		encodeTotal = 0;
+		encodePollTimer = setInterval(async () => {
+			try {
+				const res = await fetch(
+					`/api/preview/${encodeURIComponent(clipName)}/${selectedPass}/video/progress?fps=${playbackFps}`
+				);
+				const data = await res.json();
+				encodeStatus = data.status;
+				encodeCurrent = data.current ?? 0;
+				encodeTotal = data.total ?? 0;
+				if (data.status === 'ready' || data.status === 'error' || data.status === 'idle') {
+					stopEncodePolling();
+				}
+			} catch {
+				// ignore
+			}
+		}, 500);
+	}
+
+	function stopEncodePolling() {
+		if (encodePollTimer) {
+			clearInterval(encodePollTimer);
+			encodePollTimer = null;
+		}
+	}
+
+	$effect(() => {
+		if (mode === 'video') {
+			startEncodePolling();
+		} else {
+			stopEncodePolling();
+			encodeStatus = 'idle';
+		}
+	});
+
 	// Wipe state
 	let wipePos = $state(50); // percentage 0-100
 	let wipeDragging = $state(false);
@@ -176,6 +221,25 @@
 			</div>
 			<span class="compare-label mono wipe-label-a" style="left: 8px">{passLabels[comparePass] ?? comparePass}</span>
 			<span class="compare-label mono wipe-label-b" style="right: 8px">{passLabels[selectedPass] ?? selectedPass}</span>
+		{:else if mode === 'video' && (encodeStatus === 'encoding' || encodeStatus === 'stitching')}
+			<div class="encode-progress">
+				<div class="encode-label mono">
+					{#if encodeStatus === 'stitching'}
+						Stitching video...
+					{:else}
+						Converting frames... {encodeCurrent} / {encodeTotal}
+					{/if}
+				</div>
+				<div class="encode-bar">
+					<div
+						class="encode-fill"
+						style="width: {encodeTotal > 0 ? (encodeCurrent / encodeTotal) * 100 : 0}%"
+					></div>
+				</div>
+				{#if encodeTotal > 0}
+					<span class="encode-pct mono">{Math.round((encodeCurrent / encodeTotal) * 100)}%</span>
+				{/if}
+			</div>
 		{:else if mode === 'video' && videoUrl}
 			<!-- svelte-ignore a11y_media_has_caption -->
 			<video
@@ -595,6 +659,43 @@
 	}
 
 	.dl-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+	.encode-progress {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: var(--sp-2);
+		background: rgba(0, 0, 0, 0.6);
+	}
+
+	.encode-label {
+		font-size: 12px;
+		color: var(--text-secondary);
+	}
+
+	.encode-bar {
+		width: 200px;
+		height: 4px;
+		background: var(--surface-4);
+		border-radius: 2px;
+		overflow: hidden;
+	}
+
+	.encode-fill {
+		height: 100%;
+		background: var(--accent);
+		border-radius: 2px;
+		transition: width 0.3s ease-out;
+	}
+
+	.encode-pct {
+		font-size: 11px;
+		color: var(--accent);
+		font-weight: 600;
+	}
 
 	.not-ready-overlay {
 		position: absolute;
