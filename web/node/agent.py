@@ -124,6 +124,11 @@ class NodeAgent:
                 f"/api/nodes/{self.node_id}/heartbeat",
                 json={"vram_free_gb": 0, "status": status},
             )
+            if r.status_code == 404:
+                # Server restarted and lost our registration — re-register
+                logger.info("Server lost registration, re-registering...")
+                self._register()
+                return True
             return r.status_code == 200
         except Exception:
             return False
@@ -134,6 +139,9 @@ class NodeAgent:
             return None
         try:
             r = self._api("get", f"/api/nodes/{self.node_id}/next-job")
+            if r.status_code == 404:
+                # Not registered — heartbeat will handle re-registration
+                return None
             r.raise_for_status()
             data = r.json()
             return data.get("job")
