@@ -31,8 +31,36 @@
 	let loading = $state(false);
 	let error = $state(false);
 	let mode = $state<'frame' | 'video' | 'compare'>('frame');
+	let compareMode = $state<'split' | 'wipe'>('split');
 	let playbackFps = $state(24);
 	let comparePass = $state('input');
+
+	// Wipe state
+	let wipePos = $state(50); // percentage 0-100
+	let wipeDragging = $state(false);
+	let wipeViewport: HTMLDivElement | undefined = $state();
+
+	function onWipePointerDown(e: PointerEvent) {
+		wipeDragging = true;
+		(e.target as HTMLElement).setPointerCapture(e.pointerId);
+		updateWipePos(e);
+	}
+
+	function onWipePointerMove(e: PointerEvent) {
+		if (!wipeDragging || !wipeViewport) return;
+		updateWipePos(e);
+	}
+
+	function onWipePointerUp() {
+		wipeDragging = false;
+	}
+
+	function updateWipePos(e: PointerEvent) {
+		if (!wipeViewport) return;
+		const rect = wipeViewport.getBoundingClientRect();
+		const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+		wipePos = (x / rect.width) * 100;
+	}
 
 	let compareUrl = $derived(
 		frameCount > 0 ? api.preview.url(clipName, comparePass, currentFrame) : null
@@ -92,8 +120,13 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="viewer">
-	<div class="viewer-viewport" class:split={mode === 'compare'}>
-		{#if mode === 'compare'}
+	<div
+		class="viewer-viewport"
+		class:split={mode === 'compare' && compareMode === 'split'}
+		class:wipe={mode === 'compare' && compareMode === 'wipe'}
+		bind:this={wipeViewport}
+	>
+		{#if mode === 'compare' && compareMode === 'split'}
 			<div class="compare-side">
 				{#if compareNotReady}
 					<div class="not-ready-overlay"><span class="mono">Not yet rendered</span></div>
@@ -111,6 +144,38 @@
 				{/if}
 				<span class="compare-label mono">{passLabels[selectedPass] ?? selectedPass}</span>
 			</div>
+		{:else if mode === 'compare' && compareMode === 'wipe'}
+			<!-- Wipe: B layer (full) -->
+			<div class="wipe-layer wipe-b">
+				{#if frameNotReady}
+					<div class="not-ready-overlay"><span class="mono">Not yet rendered</span></div>
+				{:else if imgUrl}
+					<img src={imgUrl} alt="Frame {currentFrame} — {selectedPass}" />
+				{/if}
+			</div>
+			<!-- Wipe: A layer (clipped) -->
+			<div class="wipe-layer wipe-a" style="clip-path: inset(0 {100 - wipePos}% 0 0)">
+				{#if compareNotReady}
+					<div class="not-ready-overlay"><span class="mono">Not yet rendered</span></div>
+				{:else if compareUrl}
+					<img src={compareUrl} alt="Compare — {comparePass}" />
+				{/if}
+			</div>
+			<!-- Wipe divider -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="wipe-divider"
+				style="left: {wipePos}%"
+				onpointerdown={onWipePointerDown}
+				onpointermove={onWipePointerMove}
+				onpointerup={onWipePointerUp}
+			>
+				<div class="wipe-handle">
+					<svg width="8" height="16" viewBox="0 0 8 16" fill="none"><path d="M2 4v8M6 4v8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+				</div>
+			</div>
+			<span class="compare-label mono wipe-label-a" style="left: 8px">{passLabels[comparePass] ?? comparePass}</span>
+			<span class="compare-label mono wipe-label-b" style="right: 8px">{passLabels[selectedPass] ?? selectedPass}</span>
 		{:else if mode === 'video' && videoUrl}
 			<!-- svelte-ignore a11y_media_has_caption -->
 			<video
@@ -175,6 +240,16 @@
 							A/B
 						</button>
 					</div>
+					{#if mode === 'compare'}
+						<div class="mode-toggle">
+							<button class="mode-btn mono" class:active={compareMode === 'split'} onclick={() => { compareMode = 'split'; }} title="Side by side">
+								<svg width="14" height="10" viewBox="0 0 14 10" fill="none"><rect x="0.5" y="0.5" width="5.5" height="9" rx="0.5" stroke="currentColor" stroke-width="1"/><rect x="8" y="0.5" width="5.5" height="9" rx="0.5" stroke="currentColor" stroke-width="1"/></svg>
+							</button>
+							<button class="mode-btn mono" class:active={compareMode === 'wipe'} onclick={() => { compareMode = 'wipe'; }} title="Wipe">
+								<svg width="14" height="10" viewBox="0 0 14 10" fill="none"><rect x="0.5" y="0.5" width="13" height="9" rx="0.5" stroke="currentColor" stroke-width="1"/><line x1="7" y1="0" x2="7" y2="10" stroke="currentColor" stroke-width="1.5"/></svg>
+							</button>
+						</div>
+					{/if}
 				{/if}
 				{#if downloadUrl}
 					<a href={downloadUrl} class="dl-btn mono" title="Download {passLabels[selectedPass] ?? selectedPass} as ZIP">
@@ -315,6 +390,83 @@
 		background: var(--accent);
 		flex-shrink: 0;
 		box-shadow: 0 0 8px rgba(255, 242, 3, 0.3);
+	}
+
+	/* Wipe mode */
+	.viewer-viewport.wipe {
+		position: relative;
+		cursor: ew-resize;
+	}
+
+	.wipe-layer {
+		position: absolute;
+		inset: 0;
+	}
+
+	.wipe-layer img {
+		width: 100%;
+		height: 100%;
+		object-fit: contain;
+	}
+
+	.wipe-a {
+		z-index: 2;
+	}
+
+	.wipe-b {
+		z-index: 1;
+	}
+
+	.wipe-divider {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 20px;
+		transform: translateX(-50%);
+		z-index: 3;
+		cursor: ew-resize;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		touch-action: none;
+	}
+
+	.wipe-divider::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: 50%;
+		width: 2px;
+		transform: translateX(-50%);
+		background: var(--accent);
+		box-shadow: 0 0 8px rgba(255, 242, 3, 0.4);
+	}
+
+	.wipe-handle {
+		width: 16px;
+		height: 28px;
+		background: var(--accent);
+		border-radius: 4px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: #000;
+		z-index: 1;
+		box-shadow: 0 0 10px rgba(255, 242, 3, 0.3);
+	}
+
+	.wipe-label-a, .wipe-label-b {
+		position: absolute;
+		top: 8px;
+		z-index: 4;
+		padding: 2px 8px;
+		font-size: 10px;
+		font-weight: 600;
+		color: var(--text-primary);
+		background: rgba(0, 0, 0, 0.75);
+		border-radius: var(--radius-sm);
+		letter-spacing: 0.04em;
 	}
 
 	.compare-controls {
