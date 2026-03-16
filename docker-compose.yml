@@ -52,7 +52,7 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
       - CK_CLIPS_DIR=/app/Projects
     volumes:
-      - ./Projects:/app/Projects
+      - ${CK_PROJECTS_DIR:-./Projects}:/app/Projects
       - ./CorridorKeyModule/checkpoints:/app/CorridorKeyModule/checkpoints
       - ./gvm_core/weights:/app/gvm_core/weights
       - ./VideoMaMaInferenceModule/checkpoints:/app/VideoMaMaInferenceModule/checkpoints
@@ -73,7 +73,7 @@ services:
       - CK_NODE_GPUS=${CK_NODE_GPUS:-auto}
       - CK_SHARED_STORAGE=${CK_SHARED_STORAGE:-/app/Projects}
     volumes:
-      - ./Projects:/app/Projects
+      - ${CK_PROJECTS_DIR:-./Projects}:/app/Projects
       - ./CorridorKeyModule/checkpoints:/app/CorridorKeyModule/checkpoints
       - ./gvm_core/weights:/app/gvm_core/weights
       - ./VideoMaMaInferenceModule/checkpoints:/app/VideoMaMaInferenceModule/checkpoints
