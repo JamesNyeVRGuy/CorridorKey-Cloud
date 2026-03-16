@@ -200,7 +200,8 @@ class GPUJobQueue:
                 job.claimed_by = claimer_id
                 self._current_job = job
                 logger.info(f"Job claimed [{job.id}] by {claimer_id}: {job.job_type.value} for '{job.clip_name}'")
-            return job
+                return job
+            return None
 
     def start_job(self, job: GPUJob) -> None:
         """Mark a job as running. Must be called before processing."""
