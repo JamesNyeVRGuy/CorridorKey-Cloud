@@ -211,7 +211,7 @@ class GPUJobQueue:
                 job.status = JobStatus.RUNNING
                 job.claimed_by = claimer_id
                 job.started_at = time.time()
-                self._current_job = job
+                self._running_jobs.append(job)
                 logger.info(f"Job claimed [{job.id}] by {claimer_id}: {job.job_type.value} for '{job.clip_name}'")
                 return job
             return None
@@ -269,8 +269,8 @@ class GPUJobQueue:
             job.claimed_by = None
             job.current_frame = 0
             job.total_frames = 0
-            if self._current_job is job:
-                self._current_job = None
+            if job in self._running_jobs:
+                self._running_jobs.remove(job)
             self._queue.appendleft(job)
             logger.info(f"Job requeued [{job.id}]: {job.job_type.value} for '{job.clip_name}'")
 
