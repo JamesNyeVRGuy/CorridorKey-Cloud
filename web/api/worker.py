@@ -210,8 +210,15 @@ def _chain_next_pipeline_step(job: GPUJob, queue: GPUJobQueue, clips_dir: str, s
             params=params,
         )
 
-    if next_job and queue.submit(next_job):
-        logger.info(f"Pipeline chain: {job.job_type.value} → {next_job.job_type.value} for '{job.clip_name}'")
+    if next_job:
+        # Pin to the same node so it has the intermediate files (important for HTTP transfer)
+        if job.claimed_by and job.claimed_by != "local":
+            next_job.preferred_node = job.claimed_by
+        if queue.submit(next_job):
+            logger.info(
+                f"Pipeline chain: {job.job_type.value} → {next_job.job_type.value} "
+                f"for '{job.clip_name}' (pinned to {next_job.preferred_node or 'any'})"
+            )
 
 
 def _run_job(service: CorridorKeyService, job: GPUJob, queue: GPUJobQueue, clips_dir: str) -> None:

@@ -17,10 +17,11 @@ logger = logging.getLogger(__name__)
 class FileTransfer:
     """Handles file downloads/uploads between node and main machine."""
 
-    def __init__(self, main_url: str, node_id: str, timeout: float = 300):
+    def __init__(self, main_url: str, node_id: str, timeout: float = 300, auth_token: str = ""):
         self.main_url = main_url.rstrip("/")
         self.node_id = node_id
         self.timeout = timeout
+        self._headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
 
     def _url(self, path: str) -> str:
         return f"{self.main_url}/api/nodes/{self.node_id}/files/{path}"
@@ -31,7 +32,7 @@ class FileTransfer:
         Returns (directory_name, file_list). directory_name is the actual
         subdirectory on the server (e.g. "Frames" or "Input").
         """
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=30, headers=self._headers) as client:
             r = client.get(self._url(f"{clip_name}/{pass_name}"))
             r.raise_for_status()
             data = r.json()
@@ -58,7 +59,7 @@ class FileTransfer:
         os.makedirs(dest_dir, exist_ok=True)
         count = 0
 
-        with httpx.Client(timeout=self.timeout) as client:
+        with httpx.Client(timeout=self.timeout, headers=self._headers) as client:
             for fname in files:
                 dest_path = os.path.join(dest_dir, fname)
                 if os.path.isfile(dest_path):
@@ -81,7 +82,7 @@ class FileTransfer:
         fname = Path(file_path).name
         url = self._url(f"{clip_name}/{pass_name}/{fname}")
 
-        with httpx.Client(timeout=self.timeout) as client:
+        with httpx.Client(timeout=self.timeout, headers=self._headers) as client:
             with open(file_path, "rb") as f:
                 r = client.post(url, files={"file": (fname, f)})
                 r.raise_for_status()

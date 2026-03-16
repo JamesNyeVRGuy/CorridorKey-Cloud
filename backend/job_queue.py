@@ -60,6 +60,7 @@ class GPUJob:
     _cancel_requested: bool = field(default=False, repr=False)
     error_message: str | None = None
     claimed_by: str | None = None  # node_id or "local"
+    preferred_node: str | None = None  # prefer dispatching to this node (pipeline pinning)
 
     # Progress tracking
     current_frame: int = 0
@@ -176,20 +177,25 @@ class GPUJobQueue:
         next_job() + start_job() in a single lock acquisition so two
         workers can't claim the same job.
 
+        Jobs with a preferred_node set will only be claimed by that node
+        (or "local"). Other claimers skip them.
+
         Args:
             claimer_id: Identifier of the worker claiming the job (node_id or "local").
 
         Returns:
-            The claimed job, or None if the queue is empty.
+            The claimed job, or None if no claimable job is available.
         """
         with self._lock:
-            if not self._queue:
-                return None
-            job = self._queue.popleft()
-            job.status = JobStatus.RUNNING
-            job.claimed_by = claimer_id
-            self._current_job = job
-            logger.info(f"Job claimed [{job.id}] by {claimer_id}: {job.job_type.value} for '{job.clip_name}'")
+            for i, job in enumerate(self._queue):
+                # Skip jobs pinned to a different node
+                if job.preferred_node and job.preferred_node != claimer_id:
+                    continue
+                del self._queue[i]
+                job.status = JobStatus.RUNNING
+                job.claimed_by = claimer_id
+                self._current_job = job
+                logger.info(f"Job claimed [{job.id}] by {claimer_id}: {job.job_type.value} for '{job.clip_name}'")
             return job
 
     def start_job(self, job: GPUJob) -> None:
@@ -225,6 +231,18 @@ class GPUJobQueue:
         # Emit AFTER lock release
         if self.on_error:
             self.on_error(job.clip_name, error)
+
+    def requeue_job(self, job: GPUJob) -> None:
+        """Return a running job to the front of the queue (e.g. orphan reaper)."""
+        with self._lock:
+            job.status = JobStatus.QUEUED
+            job.claimed_by = None
+            job.current_frame = 0
+            job.total_frames = 0
+            if self._current_job is job:
+                self._current_job = None
+            self._queue.appendleft(job)
+            logger.info(f"Job requeued [{job.id}]: {job.job_type.value} for '{job.clip_name}'")
 
     def mark_cancelled(self, job: GPUJob) -> None:
         """Mark a running job as cancelled AND remove from running list."""

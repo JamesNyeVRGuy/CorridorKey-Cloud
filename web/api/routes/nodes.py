@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -18,7 +18,21 @@ from ..routes import clips as _clips_mod
 from ..ws import manager
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/nodes", tags=["nodes"])
+
+# Shared secret auth — set CK_AUTH_TOKEN on the server to require it
+_AUTH_TOKEN = os.environ.get("CK_AUTH_TOKEN", "")
+
+
+def _check_node_auth(request: Request) -> None:
+    """Verify Bearer token if CK_AUTH_TOKEN is set on the server."""
+    if not _AUTH_TOKEN:
+        return  # no token configured, allow all
+    auth = request.headers.get("Authorization", "")
+    if auth != f"Bearer {_AUTH_TOKEN}":
+        raise HTTPException(status_code=401, detail="Invalid or missing auth token")
+
+
+router = APIRouter(prefix="/api/nodes", tags=["nodes"], dependencies=[Depends(_check_node_auth)])
 
 
 # --- Schemas ---
