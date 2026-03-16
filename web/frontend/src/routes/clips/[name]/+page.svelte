@@ -5,7 +5,7 @@
 	import { api } from '$lib/api';
 	import type { Clip, InferenceParams, OutputConfig } from '$lib/api';
 	import { defaultParams, defaultOutputConfig, autoShard } from '$lib/stores/settings';
-	import { refreshJobs } from '$lib/stores/jobs';
+	import { refreshJobs, runningJobs, queuedJobs } from '$lib/stores/jobs';
 	import { refreshClips } from '$lib/stores/clips';
 	import { toast } from '$lib/stores/toasts';
 	import FrameViewer from '../../../components/FrameViewer.svelte';
@@ -32,6 +32,18 @@
 	let canRunInference = $derived(clip?.state === 'READY' || clip?.state === 'COMPLETE');
 	let canRunGVM = $derived(clip?.state === 'RAW');
 	let canRunVideoMaMa = $derived(clip?.state === 'MASKED');
+
+	// Track render progress for this clip's active job
+	let activeJobForClip = $derived.by(() => {
+		const running = $runningJobs.find((j) => j.clip_name === clipName && j.status === 'running');
+		if (running) return running;
+		return $queuedJobs.find((j) => j.clip_name === clipName) ?? null;
+	});
+	let completedFrames = $derived(
+		activeJobForClip && activeJobForClip.status === 'running'
+			? activeJobForClip.current_frame
+			: -1
+	);
 
 	async function loadClip() {
 		loading = true;
@@ -215,6 +227,7 @@
 					clipName={clip.name}
 					frameCount={clip.frame_count}
 					availablePasses={availablePasses()}
+					{completedFrames}
 				/>
 
 				<div class="clip-info">

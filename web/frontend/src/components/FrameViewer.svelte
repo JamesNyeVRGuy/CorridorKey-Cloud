@@ -6,11 +6,25 @@
 		clipName,
 		frameCount = 0,
 		availablePasses = ['input'],
+		completedFrames = -1,
 	}: {
 		clipName: string;
 		frameCount?: number;
 		availablePasses?: string[];
+		completedFrames?: number;
 	} = $props();
+
+	const outputPasses = new Set(['fg', 'matte', 'comp', 'processed']);
+	let isOutputPass = $derived(outputPasses.has(selectedPass));
+	let frameNotReady = $derived(
+		completedFrames >= 0 && isOutputPass && currentFrame >= completedFrames
+	);
+	let compareNotReady = $derived(
+		completedFrames >= 0 && outputPasses.has(comparePass) && currentFrame >= completedFrames
+	);
+	let progressPct = $derived(
+		completedFrames >= 0 && frameCount > 0 ? (completedFrames / frameCount) * 100 : -1
+	);
 
 	let currentFrame = $state(0);
 	let selectedPass = $state('input');
@@ -81,14 +95,18 @@
 	<div class="viewer-viewport" class:split={mode === 'compare'}>
 		{#if mode === 'compare'}
 			<div class="compare-side">
-				{#if compareUrl}
+				{#if compareNotReady}
+					<div class="not-ready-overlay"><span class="mono">Not yet rendered</span></div>
+				{:else if compareUrl}
 					<img src={compareUrl} alt="Compare — {comparePass}" />
 				{/if}
 				<span class="compare-label mono">{passLabels[comparePass] ?? comparePass}</span>
 			</div>
 			<div class="compare-divider"></div>
 			<div class="compare-side">
-				{#if imgUrl}
+				{#if frameNotReady}
+					<div class="not-ready-overlay"><span class="mono">Not yet rendered</span></div>
+				{:else if imgUrl}
 					<img src={imgUrl} alt="Frame {currentFrame} — {selectedPass}" />
 				{/if}
 				<span class="compare-label mono">{passLabels[selectedPass] ?? selectedPass}</span>
@@ -102,6 +120,11 @@
 				autoplay
 				class="video-player"
 			></video>
+		{:else if frameNotReady}
+			<div class="not-ready-overlay">
+				<span class="mono">Not yet rendered</span>
+				<span class="not-ready-hint mono">Frame {currentFrame + 1} — processing up to {completedFrames}</span>
+			</div>
 		{:else if imgUrl && !error}
 			<img
 				src={imgUrl}
@@ -170,14 +193,19 @@
 				<button class="tbtn" onclick={() => { currentFrame = Math.max(0, currentFrame - 1); }} title="Previous frame">
 					<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4 6l4-3v6z" fill="currentColor"/></svg>
 				</button>
-				<input
-					type="range"
-					min="0"
-					max={frameCount - 1}
-					value={currentFrame}
-					oninput={onFrameChange}
-					class="scrub-slider"
-				/>
+				<div class="scrub-wrap">
+					{#if progressPct >= 0}
+						<div class="scrub-progress" style="width: {progressPct}%"></div>
+					{/if}
+					<input
+						type="range"
+						min="0"
+						max={frameCount - 1}
+						value={currentFrame}
+						oninput={onFrameChange}
+						class="scrub-slider"
+					/>
+				</div>
 				<button class="tbtn" onclick={() => { currentFrame = Math.min(frameCount - 1, currentFrame + 1); }} title="Next frame">
 					<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8 6l-4-3v6z" fill="currentColor"/></svg>
 				</button>
@@ -416,10 +444,49 @@
 
 	.dl-btn:hover { color: var(--accent); border-color: var(--accent); }
 
+	.not-ready-overlay {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		color: var(--text-tertiary);
+		font-size: 13px;
+		background: rgba(0, 0, 0, 0.5);
+	}
+
+	.not-ready-hint {
+		font-size: 10px;
+		color: var(--text-tertiary);
+	}
+
 	.scrub-row {
 		display: flex;
 		align-items: center;
 		gap: var(--sp-2);
+	}
+
+	.scrub-wrap {
+		flex: 1;
+		position: relative;
+		height: 16px;
+		display: flex;
+		align-items: center;
+	}
+
+	.scrub-progress {
+		position: absolute;
+		left: 0;
+		top: 50%;
+		transform: translateY(-50%);
+		height: 4px;
+		background: var(--accent-dim);
+		border-radius: 2px;
+		opacity: 0.4;
+		pointer-events: none;
+		transition: width 0.3s ease-out;
 	}
 
 	.tbtn {
