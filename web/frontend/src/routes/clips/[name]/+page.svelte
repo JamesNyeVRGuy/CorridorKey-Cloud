@@ -89,6 +89,20 @@
 		}
 	}
 
+	async function runShardedInference() {
+		if (!clip) return;
+		submitting = true;
+		try {
+			await api.jobs.submitShardedInference([clip.name], params, outputConfig);
+			toast.success('Sharded inference started');
+			await refreshJobs();
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : String(e));
+		} finally {
+			submitting = false;
+		}
+	}
+
 	async function runGVM() {
 		if (!clip) return;
 		submitting = true;
@@ -262,6 +276,9 @@
 					{#if canRunInference}
 						<button class="btn btn-primary" onclick={runInference} disabled={submitting}>
 							Run Inference
+						</button>
+						<button class="btn btn-secondary" onclick={runShardedInference} disabled={submitting} title="Split across all available GPUs and nodes">
+							Run Sharded
 						</button>
 					{/if}
 					{#if canRunGVM}

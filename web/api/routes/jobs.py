@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from backend.job_queue import GPUJob, JobType
 
@@ -12,8 +15,10 @@ from ..schemas import (
     ExtractJobRequest,
     GVMJobRequest,
     InferenceJobRequest,
+    InferenceParamsSchema,
     JobListResponse,
     JobSchema,
+    OutputConfigSchema,
     PipelineJobRequest,
     VideoMaMaJobRequest,
 )
@@ -39,6 +44,9 @@ def _job_to_schema(job: GPUJob) -> JobSchema:
         claimed_by=claimed,
         started_at=job.started_at,
         priority=job.priority,
+        shard_group=job.shard_group,
+        shard_index=job.shard_index,
+        shard_total=job.shard_total,
     )
 
 
@@ -73,6 +81,106 @@ def submit_inference(req: InferenceJobRequest):
     if not submitted:
         raise HTTPException(status_code=409, detail="All jobs rejected (duplicates)")
     return submitted
+
+
+class ShardedInferenceRequest(BaseModel):
+    clip_names: list[str]
+    params: InferenceParamsSchema = InferenceParamsSchema()
+    output_config: OutputConfigSchema = OutputConfigSchema()
+    num_shards: int = 0  # 0 = auto (based on available GPUs/nodes)
+    min_shard_size: int = 50  # don't shard below this frame count
+
+
+@router.post("/inference/sharded", response_model=list[JobSchema])
+def submit_sharded_inference(req: ShardedInferenceRequest):
+    """Submit inference split across multiple GPUs/nodes.
+
+    Each shard processes a frame range independently. Only works for
+    inference (GVM/VideoMaMa have temporal dependencies).
+    """
+    queue = get_queue()
+    service = get_service()
+    submitted = []
+
+    # Count available GPU slots (local + remote nodes)
+    available_gpus = 1
+    try:
+        from device_utils import enumerate_gpus
+
+        local_gpus = enumerate_gpus()
+        available_gpus = max(1, len(local_gpus))
+    except Exception:
+        pass
+
+    online_nodes = [n for n in registry.list_nodes() if n.can_accept_jobs and n.accepts_job_type("inference")]
+    for node in online_nodes:
+        available_gpus += max(1, node.gpu_count)
+
+    for clip_name in req.clip_names:
+        # Get frame count
+        from . import clips as _clips_mod
+
+        clips = service.scan_clips(_clips_mod._clips_dir)
+        clip = next((c for c in clips if c.name == clip_name), None)
+        if clip is None:
+            continue
+
+        frame_count = clip.input_asset.frame_count if clip.input_asset else 0
+        if frame_count == 0:
+            continue
+
+        # Determine shard count
+        num_shards = req.num_shards if req.num_shards > 0 else available_gpus
+        # Don't create shards smaller than min_shard_size
+        max_shards = max(1, frame_count // req.min_shard_size)
+        num_shards = min(num_shards, max_shards)
+
+        if num_shards <= 1:
+            # Not worth sharding — submit as single job
+            job = GPUJob(
+                job_type=JobType.INFERENCE,
+                clip_name=clip_name,
+                params={
+                    "inference_params": req.params.model_dump(),
+                    "output_config": req.output_config.model_dump(),
+                },
+            )
+            if queue.submit(job):
+                submitted.append(_job_to_schema(job))
+            continue
+
+        # Create shard group
+        group_id = uuid.uuid4().hex[:8]
+        frames_per_shard = frame_count // num_shards
+
+        for i in range(num_shards):
+            start = i * frames_per_shard
+            end = frame_count if i == num_shards - 1 else (i + 1) * frames_per_shard
+            job = GPUJob(
+                job_type=JobType.INFERENCE,
+                clip_name=clip_name,
+                params={
+                    "inference_params": req.params.model_dump(),
+                    "output_config": req.output_config.model_dump(),
+                    "frame_range": [start, end],
+                },
+                shard_group=group_id,
+                shard_index=i,
+                shard_total=num_shards,
+            )
+            if queue.submit(job):
+                submitted.append(_job_to_schema(job))
+
+    if not submitted:
+        raise HTTPException(status_code=409, detail="No jobs submitted")
+    return submitted
+
+
+@router.get("/shard-group/{group_id}")
+def get_shard_group_progress(group_id: str):
+    """Get combined progress for all shards in a group."""
+    queue = get_queue()
+    return queue.shard_group_progress(group_id)
 
 
 @router.post("/gvm", response_model=list[JobSchema])

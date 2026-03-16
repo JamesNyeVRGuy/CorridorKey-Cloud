@@ -67,6 +67,9 @@
 	<div class="job-type mono">
 		<span class="type-dot" style="background: {statusColor}; box-shadow: 0 0 6px {statusColor}"></span>
 		{label}
+		{#if job.shard_total > 1}
+			<span class="shard-badge">{job.shard_index + 1}/{job.shard_total}</span>
+		{/if}
 	</div>
 
 	<div class="job-info">
@@ -180,6 +183,15 @@
 		display: flex;
 		align-items: center;
 		gap: var(--sp-2);
+	}
+
+	.shard-badge {
+		font-size: 8px;
+		padding: 1px 4px;
+		background: var(--secondary-muted);
+		color: var(--secondary);
+		border-radius: 3px;
+		font-weight: 600;
 	}
 
 	.job-node {

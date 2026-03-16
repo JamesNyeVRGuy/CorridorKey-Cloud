@@ -63,6 +63,9 @@ class GPUJob:
     preferred_node: str | None = None  # prefer dispatching to this node (pipeline pinning)
     started_at: float = 0  # timestamp when job started running
     priority: int = 0  # higher = processed first
+    shard_group: str | None = None  # links shards of the same job
+    shard_index: int = 0  # which shard this is (0-based)
+    shard_total: int = 1  # total number of shards
 
     # Progress tracking
     current_frame: int = 0
@@ -141,24 +144,26 @@ class GPUJobQueue:
                     logger.debug(f"Preview reprocess [{old.id}] replaced by [{job.id}]")
             else:
                 # Deduplication: reject if same clip+job_type already queued or running
-                for existing in self._queue:
-                    if existing.clip_name == job.clip_name and existing.job_type == job.job_type:
-                        logger.warning(
-                            f"Duplicate job rejected: {job.job_type.value} for '{job.clip_name}' "
-                            f"(already queued as {existing.id})"
-                        )
-                        return False
-                for running in self._running_jobs:
-                    if (
-                        running.clip_name == job.clip_name
-                        and running.job_type == job.job_type
-                        and running.status == JobStatus.RUNNING
-                    ):
-                        logger.warning(
-                            f"Duplicate job rejected: {job.job_type.value} for '{job.clip_name}' "
-                            f"(already running as {running.id})"
-                        )
-                        return False
+                # Sharded jobs (shard_group set) bypass dedup — they're intentional splits
+                if not job.shard_group:
+                    for existing in self._queue:
+                        if existing.clip_name == job.clip_name and existing.job_type == job.job_type:
+                            logger.warning(
+                                f"Duplicate job rejected: {job.job_type.value} for '{job.clip_name}' "
+                                f"(already queued as {existing.id})"
+                            )
+                            return False
+                    for running in self._running_jobs:
+                        if (
+                            running.clip_name == job.clip_name
+                            and running.job_type == job.job_type
+                            and running.status == JobStatus.RUNNING
+                        ):
+                            logger.warning(
+                                f"Duplicate job rejected: {job.job_type.value} for '{job.clip_name}' "
+                                f"(already running as {running.id})"
+                            )
+                            return False
 
             job.status = JobStatus.QUEUED
             # Insert sorted by priority (higher first). Same priority = FIFO.
@@ -348,6 +353,37 @@ class GPUJobQueue:
                 if job.id == job_id:
                     return job
         return None
+
+    def shard_group_progress(self, shard_group: str) -> dict:
+        """Get combined progress for all shards in a group."""
+        with self._lock:
+            all_jobs = list(self._running_jobs) + list(self._queue) + self._history
+            shards = [j for j in all_jobs if j.shard_group == shard_group]
+            if not shards:
+                return {
+                    "total_shards": 0,
+                    "completed": 0,
+                    "running": 0,
+                    "failed": 0,
+                    "current_frame": 0,
+                    "total_frames": 0,
+                }
+
+            completed = sum(1 for s in shards if s.status == JobStatus.COMPLETED)
+            running = sum(1 for s in shards if s.status == JobStatus.RUNNING)
+            failed = sum(1 for s in shards if s.status == JobStatus.FAILED)
+            current = sum(s.current_frame for s in shards)
+            total = sum(s.total_frames for s in shards)
+
+            return {
+                "shard_group": shard_group,
+                "total_shards": len(shards),
+                "completed": completed,
+                "running": running,
+                "failed": failed,
+                "current_frame": current,
+                "total_frames": total,
+            }
 
     def clear_history(self) -> None:
         """Clear job history (for UI reset)."""

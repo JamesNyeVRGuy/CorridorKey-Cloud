@@ -56,6 +56,9 @@ export interface Job {
 	claimed_by: string | null;
 	started_at: number;
 	priority: number;
+	shard_group: string | null;
+	shard_index: number;
+	shard_total: number;
 }
 
 export interface JobListResponse {
@@ -144,6 +147,18 @@ export const api = {
 				params: params ?? {},
 				output_config: output_config ?? {},
 				frame_range: frame_range ?? null
+			}),
+		submitShardedInference: (
+			clip_names: string[],
+			params?: Partial<InferenceParams>,
+			output_config?: Partial<OutputConfig>,
+			num_shards = 0
+		) =>
+			request<Job[]>('POST', '/api/jobs/inference/sharded', {
+				clip_names,
+				params: params ?? {},
+				output_config: output_config ?? {},
+				num_shards
 			}),
 		submitPipeline: (
 			clip_names: string[],

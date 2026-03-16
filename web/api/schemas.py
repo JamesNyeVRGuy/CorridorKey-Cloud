@@ -94,6 +94,9 @@ class JobSchema(BaseModel):
     claimed_by: str | None = None
     started_at: float = 0
     priority: int = 0
+    shard_group: str | None = None
+    shard_index: int = 0
+    shard_total: int = 1
 
 
 class JobListResponse(BaseModel):
