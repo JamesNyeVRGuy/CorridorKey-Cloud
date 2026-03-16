@@ -57,8 +57,8 @@
 		<section class="section">
 			<h2 class="section-title mono">QUEUED <span class="count">{$queuedJobs.length}</span></h2>
 			<div class="job-list">
-				{#each $queuedJobs as job (job.id)}
-					<JobRow {job} showCancel />
+				{#each $queuedJobs as job, i (job.id)}
+					<JobRow {job} showCancel queueIndex={i} />
 				{/each}
 			</div>
 		</section>

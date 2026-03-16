@@ -38,6 +38,7 @@ def _job_to_schema(job: GPUJob) -> JobSchema:
         error_message=job.error_message,
         claimed_by=claimed,
         started_at=job.started_at,
+        priority=job.priority,
     )
 
 
@@ -188,6 +189,28 @@ def cancel_job(job_id: str):
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
     queue.cancel_job(job)
     return {"status": "cancelled", "job_id": job_id}
+
+
+@router.post("/{job_id}/move")
+def move_job(job_id: str, position: int):
+    """Move a queued job to a specific position (0 = front of queue)."""
+    queue = get_queue()
+    if not queue.move_job(job_id, position):
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found in queue")
+    return {"status": "moved", "job_id": job_id, "position": position}
+
+
+@router.post("/{job_id}/priority")
+def set_job_priority(job_id: str, priority: int):
+    """Set priority for a queued job. Higher = processed first."""
+    queue = get_queue()
+    job = queue.find_job_by_id(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    if job.status.value != "queued":
+        raise HTTPException(status_code=409, detail="Can only set priority on queued jobs")
+    job.priority = priority
+    return {"status": "ok", "job_id": job_id, "priority": priority}
 
 
 @router.get("/{job_id}/log")

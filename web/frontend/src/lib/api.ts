@@ -55,6 +55,7 @@ export interface Job {
 	error_message: string | null;
 	claimed_by: string | null;
 	started_at: number;
+	priority: number;
 }
 
 export interface JobListResponse {
@@ -164,7 +165,11 @@ export const api = {
 			request<Job[]>('POST', '/api/jobs/videomama', { clip_names, chunk_size }),
 		getLog: (jobId: string) => request<Record<string, unknown>>('GET', `/api/jobs/${jobId}/log`),
 		cancel: (jobId: string) => request<unknown>('DELETE', `/api/jobs/${jobId}`),
-		cancelAll: () => request<unknown>('DELETE', '/api/jobs')
+		cancelAll: () => request<unknown>('DELETE', '/api/jobs'),
+		move: (jobId: string, position: number) =>
+			request<unknown>('POST', `/api/jobs/${jobId}/move?position=${position}`),
+		setPriority: (jobId: string, priority: number) =>
+			request<unknown>('POST', `/api/jobs/${jobId}/priority?priority=${priority}`)
 	},
 	system: {
 		device: () => request<DeviceInfo>('GET', '/api/system/device'),

@@ -3,7 +3,10 @@
 	import { api } from '$lib/api';
 	import ProgressBar from './ProgressBar.svelte';
 
-	let { job, showCancel = false }: { job: Job; showCancel?: boolean } = $props();
+	import { refreshJobs } from '$lib/stores/jobs';
+
+	let { job, showCancel = false, queueIndex = -1 }: { job: Job; showCancel?: boolean; queueIndex?: number } = $props();
+	let isQueued = $derived(job.status === 'queued');
 
 	const typeLabels: Record<string, string> = {
 		inference: 'Inference',
@@ -31,6 +34,18 @@
 
 	async function handleCancel() {
 		await api.jobs.cancel(job.id);
+	}
+
+	async function moveUp() {
+		if (queueIndex > 0) {
+			await api.jobs.move(job.id, queueIndex - 1);
+			refreshJobs();
+		}
+	}
+
+	async function moveDown() {
+		await api.jobs.move(job.id, queueIndex + 1);
+		refreshJobs();
 	}
 
 	async function toggleLog() {
@@ -68,6 +83,14 @@
 			<span class="job-node mono" title="Processed by {job.claimed_by}">{job.claimed_by}</span>
 		{/if}
 		<span class="job-id mono">{job.id}</span>
+		{#if isQueued && queueIndex >= 0}
+			<button class="move-btn" onclick={moveUp} title="Move up" disabled={queueIndex === 0}>
+				<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2.5L2.5 6.5h7L6 2.5z" fill="currentColor"/></svg>
+			</button>
+			<button class="move-btn" onclick={moveDown} title="Move down">
+				<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 9.5L2.5 5.5h7L6 9.5z" fill="currentColor"/></svg>
+			</button>
+		{/if}
 		{#if showCancel && (job.status === 'running' || job.status === 'queued')}
 			<button class="cancel-btn" onclick={handleCancel} title="Cancel job">
 				<svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -171,6 +194,31 @@
 	.job-id {
 		font-size: 9px;
 		color: var(--text-tertiary);
+	}
+
+	.move-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		border-radius: 3px;
+		border: 1px solid var(--border);
+		background: var(--surface-3);
+		color: var(--text-tertiary);
+		cursor: pointer;
+		transition: all 0.15s;
+		padding: 0;
+	}
+
+	.move-btn:hover:not(:disabled) {
+		color: var(--text-primary);
+		border-color: var(--text-tertiary);
+	}
+
+	.move-btn:disabled {
+		opacity: 0.3;
+		cursor: default;
 	}
 
 	.cancel-btn {
