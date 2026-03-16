@@ -38,6 +38,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Copy built frontend from stage 1.
 COPY --from=frontend /build/build /app/web/frontend/build
 
+# Ensure Projects dir exists and is owned by appuser
+RUN mkdir -p /app/Projects && chown appuser:appuser /app/Projects
+
 USER appuser
 
 ENV OPENCV_IO_ENABLE_OPENEXR=1

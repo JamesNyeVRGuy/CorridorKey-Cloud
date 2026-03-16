@@ -42,6 +42,7 @@ services:
       context: .
       dockerfile: web/Dockerfile.web
     image: corridorkey-web:latest
+    user: "${UID:-1000}:${GID:-1000}"
     gpus: ${CK_GPUS:-all}
     ports:
       - "3000:3000"
