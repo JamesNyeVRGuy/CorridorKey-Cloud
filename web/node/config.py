@@ -27,3 +27,6 @@ SHARED_STORAGE: str = _get("CK_SHARED_STORAGE", "")  # empty = HTTP transfer
 POLL_INTERVAL: float = float(_get("CK_POLL_INTERVAL", "2"))
 HEARTBEAT_INTERVAL: float = float(_get("CK_HEARTBEAT_INTERVAL", "10"))
 AUTH_TOKEN: str = _get("CK_AUTH_TOKEN", "")  # shared secret for node auth
+# Comma-separated job types this node accepts. Empty = all.
+# Valid types: inference, gvm_alpha, videomama_alpha, video_extract, video_stitch
+ACCEPTED_TYPES: str = _get("CK_NODE_ACCEPTED_TYPES", "")

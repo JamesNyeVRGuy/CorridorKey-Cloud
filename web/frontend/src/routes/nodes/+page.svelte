@@ -17,6 +17,16 @@
 	let scheduleStart = $state('20:00');
 	let scheduleEnd = $state('08:00');
 	let scheduleEnabled = $state(false);
+	let editingTypes = $state<string | null>(null);
+	let selectedTypes = $state<Set<string>>(new Set());
+
+	const ALL_JOB_TYPES = [
+		{ value: 'inference', label: 'Inference' },
+		{ value: 'gvm_alpha', label: 'GVM Alpha' },
+		{ value: 'videomama_alpha', label: 'VideoMaMa' },
+		{ value: 'video_extract', label: 'Extract' },
+		{ value: 'video_stitch', label: 'Stitch' }
+	];
 
 	onMount(() => {
 		refreshNodes();
@@ -96,6 +106,45 @@
 
 	function cancelScheduleEdit() {
 		editingSchedule = null;
+	}
+
+	function openTypesEditor(node: NodeInfo) {
+		editingTypes = node.node_id;
+		selectedTypes = new Set(node.accepted_types);
+	}
+
+	function toggleType(type: string) {
+		const next = new Set(selectedTypes);
+		if (next.has(type)) next.delete(type);
+		else next.add(type);
+		selectedTypes = next;
+	}
+
+	async function saveTypes() {
+		if (!editingTypes) return;
+		try {
+			await api.nodes.setAcceptedTypes(editingTypes, [...selectedTypes]);
+			editingTypes = null;
+			refreshNodes();
+		} catch (e: unknown) {
+			toast.error(`Failed: ${e instanceof Error ? e.message : e}`);
+		}
+	}
+
+	function cancelTypesEdit() {
+		editingTypes = null;
+	}
+
+	function formatTypes(node: NodeInfo): string {
+		if (!node.accepted_types.length) return 'all';
+		const labels: Record<string, string> = {
+			inference: 'Inf',
+			gvm_alpha: 'GVM',
+			videomama_alpha: 'VMa',
+			video_extract: 'Ext',
+			video_stitch: 'Stitch'
+		};
+		return node.accepted_types.map((t) => labels[t] ?? t).join(', ');
 	}
 
 	function formatSchedule(node: NodeInfo): string {
@@ -235,6 +284,13 @@
 									>
 								</button>
 								<button
+									class="btn-icon"
+									title="Job types"
+									onclick={() => openTypesEditor(node)}
+								>
+									<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 3h12M2 3l4 5v4l2 1V8l4-5" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+								</button>
+								<button
 									class="btn-icon danger"
 									title="Remove node"
 									onclick={() => removeNode(node.node_id)}
@@ -287,6 +343,29 @@
 							</div>
 						{/if}
 
+						<!-- Job types editor (inline) -->
+						{#if editingTypes === node.node_id}
+							<div class="schedule-editor">
+								<p class="types-hint mono">Select which job types this node accepts. None selected = all types.</p>
+								<div class="types-grid">
+									{#each ALL_JOB_TYPES as jt}
+										<label class="type-chip" class:selected={selectedTypes.has(jt.value)}>
+											<input
+												type="checkbox"
+												checked={selectedTypes.has(jt.value)}
+												onchange={() => toggleType(jt.value)}
+											/>
+											<span>{jt.label}</span>
+										</label>
+									{/each}
+								</div>
+								<div class="schedule-actions">
+									<button class="btn-save" onclick={saveTypes}>Save</button>
+									<button class="btn-cancel" onclick={cancelTypesEdit}>Cancel</button>
+								</div>
+							</div>
+						{/if}
+
 						{#if node.gpus && node.gpus.length > 0}
 							<div class="node-gpus">
 								{#each node.gpus as gpu}
@@ -326,6 +405,11 @@
 							{#if node.schedule.enabled}
 								<span class="node-tag schedule mono" title="Active hours">
 									{formatSchedule(node)}
+								</span>
+							{/if}
+							{#if node.accepted_types && node.accepted_types.length > 0}
+								<span class="node-tag types mono" title="Accepted job types">
+									{formatTypes(node)}
 								</span>
 							{/if}
 							<span class="node-heartbeat mono">{timeSince(node.last_heartbeat)}</span>
@@ -831,6 +915,48 @@
 
 	.node-tag.schedule {
 		color: var(--secondary);
+	}
+
+	.node-tag.types {
+		color: var(--state-raw);
+	}
+
+	.types-hint {
+		font-size: 11px;
+		color: var(--text-tertiary);
+	}
+
+	.types-grid {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.type-chip {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 12px;
+		color: var(--text-secondary);
+		padding: 3px 8px;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.type-chip:hover {
+		border-color: var(--text-tertiary);
+	}
+
+	.type-chip.selected {
+		border-color: var(--accent);
+		color: var(--accent);
+		background: var(--accent-muted);
+	}
+
+	.type-chip input {
+		display: none;
 	}
 
 	.node-heartbeat {

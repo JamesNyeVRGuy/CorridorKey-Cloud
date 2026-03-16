@@ -230,7 +230,11 @@ export const api = {
 		pause: (nodeId: string) => request<unknown>('POST', `/api/nodes/${encodeURIComponent(nodeId)}/pause`),
 		resume: (nodeId: string) => request<unknown>('POST', `/api/nodes/${encodeURIComponent(nodeId)}/resume`),
 		setSchedule: (nodeId: string, schedule: { enabled: boolean; start: string; end: string }) =>
-			request<unknown>('PUT', `/api/nodes/${encodeURIComponent(nodeId)}/schedule`, schedule)
+			request<unknown>('PUT', `/api/nodes/${encodeURIComponent(nodeId)}/schedule`, schedule),
+		setAcceptedTypes: (nodeId: string, types: string[]) =>
+			request<unknown>('PUT', `/api/nodes/${encodeURIComponent(nodeId)}/accepted-types`, {
+				accepted_types: types
+			})
 	},
 	system2: {
 		localGpus: () =>

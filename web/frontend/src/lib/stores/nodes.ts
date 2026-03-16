@@ -32,6 +32,7 @@ export interface NodeInfo {
 	shared_storage: string | null;
 	paused: boolean;
 	schedule: NodeSchedule;
+	accepted_types: string[];
 }
 
 export const nodes = writable<NodeInfo[]>([]);

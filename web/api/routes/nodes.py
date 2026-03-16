@@ -55,6 +55,7 @@ class NodeRegisterRequest(BaseModel):
     vram_free_gb: float = 0.0
     capabilities: list[str] = []
     shared_storage: str | None = None
+    accepted_types: list[str] = []
 
 
 class NodeHeartbeatRequest(BaseModel):
@@ -88,9 +89,12 @@ def register_node(req: NodeRegisterRequest):
         vram_free_gb=req.vram_free_gb,
         capabilities=req.capabilities,
         shared_storage=req.shared_storage,
+        accepted_types=req.accepted_types,
     )
     registry.register(info)
-    manager.send_node_update(info.to_dict())
+    # Re-fetch to get the merged state (register preserves UI-set fields)
+    node = registry.get_node(req.node_id)
+    manager.send_node_update(node.to_dict() if node else info.to_dict())
     return {"status": "registered", "node_id": req.node_id}
 
 
@@ -169,6 +173,21 @@ def set_node_schedule(node_id: str, req: NodeScheduleRequest):
     return node.schedule.to_dict()
 
 
+class AcceptedTypesRequest(BaseModel):
+    accepted_types: list[str] = []  # empty = all types
+
+
+@router.put("/{node_id}/accepted-types")
+def set_accepted_types(node_id: str, req: AcceptedTypesRequest):
+    """Set which job types a node will accept. Empty list = all types."""
+    node = registry.get_node(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
+    node.accepted_types = req.accepted_types
+    manager.send_node_update(node.to_dict())
+    return {"accepted_types": node.accepted_types}
+
+
 # --- Job dispatch ---
 
 
@@ -187,7 +206,7 @@ def get_next_job(node_id: str):
         return {"job": None, "reason": "paused" if node.paused else "outside_schedule"}
 
     queue = get_queue()
-    job = queue.claim_job(node_id)
+    job = queue.claim_job(node_id, accepted_types=node.accepted_types or None)
     if job is None:
         return {"job": None}
 
