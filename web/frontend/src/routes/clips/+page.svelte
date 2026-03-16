@@ -3,9 +3,11 @@
 	import { goto } from '$app/navigation';
 	import { refreshClips } from '$lib/stores/clips';
 	import { refreshJobs } from '$lib/stores/jobs';
-	import { autoExtractFrames } from '$lib/stores/settings';
+	import { autoExtractFrames, autoShard } from '$lib/stores/settings';
 	import { api } from '$lib/api';
 	import type { Project, Clip } from '$lib/api';
+	import type { InferenceParams, OutputConfig } from '$lib/api';
+	import { defaultParams, defaultOutputConfig } from '$lib/stores/settings';
 	import ClipCard from '../../components/ClipCard.svelte';
 	import ContextMenu from '../../components/ContextMenu.svelte';
 	import type { MenuItem } from '../../components/ContextMenu.svelte';
@@ -20,6 +22,94 @@
 	let creatingProject = $state(false);
 	let newProjectName = $state('');
 	let showCreateForm = $state(false);
+
+	// Multi-select
+	let selectedClips = $state<Set<string>>(new Set());
+
+	function toggleSelect(clipName: string, e?: MouseEvent) {
+		const next = new Set(selectedClips);
+		if (next.has(clipName)) next.delete(clipName);
+		else next.add(clipName);
+		selectedClips = next;
+		e?.stopPropagation();
+	}
+
+	function clearSelection() {
+		selectedClips = new Set();
+	}
+
+	let hasSelection = $derived(selectedClips.size > 0);
+
+	function showSelectionContext(e: MouseEvent) {
+		e.preventDefault();
+		const names = [...selectedClips];
+		ctxX = e.clientX;
+		ctxY = e.clientY;
+		ctxItems = [
+			{
+				label: `Run Pipeline (${names.length} clips)`,
+				action: async () => {
+					try {
+						await api.jobs.submitPipeline(names);
+						toast.success(`Pipeline started for ${names.length} clips`);
+						await refreshJobs();
+						clearSelection();
+					} catch (err) {
+						toast.error(err instanceof Error ? err.message : String(err));
+					}
+				},
+			},
+			{
+				label: `Run Inference (${names.length} clips)`,
+				action: async () => {
+					try {
+						if ($autoShard) {
+							await api.jobs.submitShardedInference(names, $defaultParams, $defaultOutputConfig);
+						} else {
+							await api.jobs.submitInference(names, $defaultParams, $defaultOutputConfig);
+						}
+						toast.success(`Inference started for ${names.length} clips`);
+						await refreshJobs();
+						clearSelection();
+					} catch (err) {
+						toast.error(err instanceof Error ? err.message : String(err));
+					}
+				},
+			},
+			{
+				label: `Run GVM Alpha (${names.length} clips)`,
+				action: async () => {
+					try {
+						await api.jobs.submitGVM(names);
+						toast.success(`GVM started for ${names.length} clips`);
+						await refreshJobs();
+						clearSelection();
+					} catch (err) {
+						toast.error(err instanceof Error ? err.message : String(err));
+					}
+				},
+			},
+			{
+				label: `Run VideoMaMa (${names.length} clips)`,
+				action: async () => {
+					try {
+						await api.jobs.submitVideoMaMa(names);
+						toast.success(`VideoMaMa started for ${names.length} clips`);
+						await refreshJobs();
+						clearSelection();
+					} catch (err) {
+						toast.error(err instanceof Error ? err.message : String(err));
+					}
+				},
+			},
+			{ label: '---', action: () => {} },
+			{
+				label: 'Clear Selection',
+				action: clearSelection,
+			},
+		];
+		ctxVisible = true;
+	}
 
 	// Context menu state
 	let ctxVisible = $state(false);
@@ -239,6 +329,18 @@
 		</div>
 	{/if}
 
+	{#if hasSelection}
+		<div class="selection-bar">
+			<span class="selection-count mono">{selectedClips.size} clip{selectedClips.size !== 1 ? 's' : ''} selected</span>
+			<button class="btn-ghost-sm" onclick={(e) => showSelectionContext(e)}>
+				Actions
+			</button>
+			<button class="btn-ghost-sm" onclick={clearSelection}>
+				Clear
+			</button>
+		</div>
+	{/if}
+
 	{#if error || uploadError}
 		<div class="error-banner mono">
 			{error || uploadError}
@@ -310,10 +412,18 @@
 								<div class="clip-grid">
 									{#each project.clips as clip (clip.name)}
 										<div class="clip-wrap"
+											class:selected={selectedClips.has(clip.name)}
 											draggable="true"
 											ondragstart={(e) => { e.dataTransfer?.setData('text/clip-name', clip.name); }}
-											oncontextmenu={(e) => showClipContext(e, clip, project)}
+											oncontextmenu={(e) => hasSelection ? showSelectionContext(e) : showClipContext(e, clip, project)}
 										>
+											<label class="clip-checkbox" onclick={(e) => e.stopPropagation()}>
+												<input
+													type="checkbox"
+													checked={selectedClips.has(clip.name)}
+													onchange={(e) => toggleSelect(clip.name)}
+												/>
+											</label>
 											<ClipCard {clip} />
 											{#if projects.length > 1}
 												<select
@@ -630,9 +740,46 @@
 		cursor: grab;
 	}
 
+	.clip-wrap.selected {
+		outline: 2px solid var(--accent);
+		outline-offset: -2px;
+		border-radius: var(--radius-md);
+	}
+
 	.clip-wrap:active {
 		cursor: grabbing;
 		opacity: 0.7;
+	}
+
+	.clip-checkbox {
+		position: absolute;
+		top: 6px;
+		left: 6px;
+		z-index: 2;
+		cursor: pointer;
+	}
+
+	.clip-checkbox input {
+		width: 16px;
+		height: 16px;
+		accent-color: var(--accent);
+		cursor: pointer;
+	}
+
+	.selection-bar {
+		display: flex;
+		align-items: center;
+		gap: var(--sp-3);
+		padding: var(--sp-2) var(--sp-4);
+		background: var(--accent-muted);
+		border: 1px solid var(--accent);
+		border-radius: var(--radius-md);
+	}
+
+	.selection-count {
+		font-size: 12px;
+		color: var(--accent);
+		font-weight: 600;
 	}
 
 	.move-select {

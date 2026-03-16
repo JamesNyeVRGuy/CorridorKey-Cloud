@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { defaultParams, defaultOutputConfig, autoExtractFrames } from '$lib/stores/settings';
+	import { defaultParams, defaultOutputConfig, autoExtractFrames, autoShard } from '$lib/stores/settings';
 	import { api } from '$lib/api';
 	import type { WeightInfo } from '$lib/api';
 	import { toast } from '$lib/stores/toasts';
@@ -138,6 +138,13 @@
 				<div class="toggle-label">
 					<span>Auto-extract frames on video upload</span>
 					<span class="toggle-hint">When enabled, uploading a video automatically queues frame extraction.</span>
+				</div>
+			</label>
+			<label class="toggle-row">
+				<input type="checkbox" bind:checked={$autoShard} class="toggle" />
+				<div class="toggle-label">
+					<span>Auto-shard inference across GPUs</span>
+					<span class="toggle-hint">When enabled, inference jobs automatically split across all available GPUs and nodes.</span>
 				</div>
 			</label>
 		</section>

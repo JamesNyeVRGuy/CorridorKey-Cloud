@@ -34,6 +34,7 @@ function persisted<T>(key: string, defaultValue: T) {
 }
 
 export const autoExtractFrames = persisted<boolean>('ck:autoExtractFrames', true);
+export const autoShard = persisted<boolean>('ck:autoShard', false);
 
 export const defaultParams = persisted<InferenceParams>('ck:defaultParams', {
 	input_is_linear: false,

@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import type { Clip, InferenceParams, OutputConfig } from '$lib/api';
-	import { defaultParams, defaultOutputConfig } from '$lib/stores/settings';
+	import { defaultParams, defaultOutputConfig, autoShard } from '$lib/stores/settings';
 	import { refreshJobs } from '$lib/stores/jobs';
 	import { refreshClips } from '$lib/stores/clips';
 	import { toast } from '$lib/stores/toasts';
@@ -80,7 +80,11 @@
 		if (!clip) return;
 		submitting = true;
 		try {
-			await api.jobs.submitInference([clip.name], params, outputConfig);
+			if ($autoShard) {
+				await api.jobs.submitShardedInference([clip.name], params, outputConfig);
+			} else {
+				await api.jobs.submitInference([clip.name], params, outputConfig);
+			}
 			await refreshJobs();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : String(e));
@@ -263,10 +267,7 @@
 					{/if}
 					{#if canRunInference}
 						<button class="btn btn-primary" onclick={runInference} disabled={submitting}>
-							Run Inference
-						</button>
-						<button class="btn btn-secondary" onclick={runShardedInference} disabled={submitting} title="Split across all available GPUs and nodes">
-							Run Sharded
+							{$autoShard ? 'Run Inference (Sharded)' : 'Run Inference'}
 						</button>
 					{/if}
 					{#if canRunGVM}
