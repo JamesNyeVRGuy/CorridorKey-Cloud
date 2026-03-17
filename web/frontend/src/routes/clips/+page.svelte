@@ -104,6 +104,19 @@
 			},
 			{ label: '---', action: () => {} },
 			{
+				label: `Delete Selected (${names.length})`,
+				danger: true,
+				action: async () => {
+					if (!confirm(`Delete ${names.length} selected clips? This cannot be undone.`)) return;
+					for (const n of names) {
+						try { await api.clips.delete(n); } catch { /* continue */ }
+					}
+					clearSelection();
+					await loadProjects();
+				},
+			},
+			{ label: '---', action: () => {} },
+			{
 				label: 'Clear Selection',
 				action: clearSelection,
 			},
