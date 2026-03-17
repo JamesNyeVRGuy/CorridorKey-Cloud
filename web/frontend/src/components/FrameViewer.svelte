@@ -150,14 +150,83 @@
 		}
 	}
 
+	// Zoom and pan state
+	let zoom = $state(1);
+	let panX = $state(0);
+	let panY = $state(0);
+	let isPanning = $state(false);
+	let panStartX = 0;
+	let panStartY = 0;
+	let panOriginX = 0;
+	let panOriginY = 0;
+	let isZoomed = $derived(zoom > 1.05);
+
+	let viewportTransform = $derived(
+		`scale(${zoom}) translate(${panX / zoom}px, ${panY / zoom}px)`
+	);
+
+	function onWheel(e: WheelEvent) {
+		if (mode === 'video') return;
+		e.preventDefault();
+
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		const mouseX = e.clientX - rect.left;
+		const mouseY = e.clientY - rect.top;
+
+		const prevZoom = zoom;
+		const delta = e.deltaY > 0 ? 0.9 : 1.1;
+		zoom = Math.max(1, Math.min(10, zoom * delta));
+
+		// Zoom toward cursor
+		if (zoom > 1) {
+			const scale = zoom / prevZoom;
+			panX = mouseX - scale * (mouseX - panX);
+			panY = mouseY - scale * (mouseY - panY);
+		} else {
+			panX = 0;
+			panY = 0;
+		}
+	}
+
+	function onPanStart(e: PointerEvent) {
+		if (mode === 'compare' && compareMode === 'wipe') return; // wipe uses its own drag
+		if (!isZoomed) return;
+		isPanning = true;
+		panStartX = e.clientX;
+		panStartY = e.clientY;
+		panOriginX = panX;
+		panOriginY = panY;
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		e.preventDefault();
+	}
+
+	function onPanMove(e: PointerEvent) {
+		if (!isPanning) return;
+		panX = panOriginX + (e.clientX - panStartX);
+		panY = panOriginY + (e.clientY - panStartY);
+	}
+
+	function onPanEnd() {
+		isPanning = false;
+	}
+
+	function resetZoom() {
+		zoom = 1;
+		panX = 0;
+		panY = 0;
+	}
+
 	function onKeydown(e: KeyboardEvent) {
 		if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-		if (mode === 'video') return; // let video handle its own controls
+		if (mode === 'video') return;
 		switch (e.key) {
 			case 'ArrowLeft': e.preventDefault(); currentFrame = Math.max(0, currentFrame - 1); break;
 			case 'ArrowRight': e.preventDefault(); currentFrame = Math.min(frameCount - 1, currentFrame + 1); break;
 			case 'Home': e.preventDefault(); currentFrame = 0; break;
 			case 'End': e.preventDefault(); currentFrame = frameCount - 1; break;
+			case '+': case '=': e.preventDefault(); zoom = Math.min(10, zoom * 1.2); break;
+			case '-': e.preventDefault(); zoom = Math.max(1, zoom * 0.8); if (zoom <= 1.05) { panX = 0; panY = 0; } break;
+			case '0': e.preventDefault(); resetZoom(); break;
 		}
 	}
 </script>
@@ -165,11 +234,19 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="viewer">
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="viewer-viewport"
 		class:split={mode === 'compare' && compareMode === 'split'}
 		class:wipe={mode === 'compare' && compareMode === 'wipe'}
+		class:zoomed={isZoomed}
 		bind:this={wipeViewport}
+		onwheel={onWheel}
+		onpointerdown={onPanStart}
+		onpointermove={onPanMove}
+		onpointerup={onPanEnd}
+		ondblclick={resetZoom}
+		style="--zoom-transform: {viewportTransform}"
 	>
 		{#if mode === 'compare' && compareMode === 'split'}
 			<div class="compare-side">
@@ -274,6 +351,11 @@
 		{/if}
 		{#if mode !== 'video' && frameCount > 0}
 			<div class="frame-counter mono">{currentFrame + 1} / {frameCount}</div>
+		{/if}
+		{#if isZoomed}
+			<button class="zoom-badge mono" onclick={resetZoom} title="Reset zoom (0)">
+				{Math.round(zoom * 100)}%
+			</button>
 		{/if}
 	</div>
 
@@ -407,6 +489,16 @@
 		height: 100%;
 		object-fit: contain;
 		transition: opacity 0.1s;
+		transform: var(--zoom-transform, none);
+		transform-origin: 0 0;
+	}
+
+	.viewer-viewport.zoomed {
+		cursor: grab;
+	}
+
+	.viewer-viewport.zoomed:active {
+		cursor: grabbing;
 	}
 
 	.viewer-viewport img.loading {
@@ -563,6 +655,27 @@
 		border-top-color: var(--accent);
 		border-radius: 50%;
 		animation: spin 0.6s linear infinite;
+	}
+
+	.zoom-badge {
+		position: absolute;
+		top: var(--sp-2);
+		right: var(--sp-2);
+		padding: 3px 8px;
+		font-size: 10px;
+		font-weight: 600;
+		color: var(--accent);
+		background: rgba(0, 0, 0, 0.75);
+		border: 1px solid var(--accent-muted);
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+		z-index: 5;
+		transition: all 0.15s;
+	}
+
+	.zoom-badge:hover {
+		background: var(--accent);
+		color: #000;
 	}
 
 	.frame-counter {
