@@ -1,14 +1,17 @@
 """Weight sync — downloads model weights from the main machine on node startup.
 
 Checks which weights are installed locally and pulls missing files from
-the main server's /api/system/weights/{name}/file/ endpoints. Runs once
-at startup before the node enters its poll loop.
+the main server's /api/system/weights/{name}/file/ endpoints. Falls back
+to downloading directly from HuggingFace if the main server doesn't have
+weights installed.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import subprocess
+import sys
 
 import httpx
 
@@ -19,6 +22,20 @@ WEIGHT_SETS: dict[str, str] = {
     "corridorkey": os.path.join("CorridorKeyModule", "checkpoints"),
     "gvm": os.path.join("gvm_core", "weights"),
     "videomama": os.path.join("VideoMaMaInferenceModule", "checkpoints", "VideoMaMa"),
+}
+
+# HuggingFace repos for direct download fallback
+HF_REPOS: dict[str, dict] = {
+    "corridorkey": {
+        "repo": "nikopueringer/CorridorKey_v1.0",
+        "files": ["CorridorKey_v1.0.pth"],
+    },
+    "gvm": {
+        "repo": "geyongtao/gvm",
+    },
+    "videomama": {
+        "repo": "SammyLim/VideoMaMa",
+    },
 }
 
 
@@ -60,11 +77,14 @@ def sync_weights(main_url: str, weight_names: list[str] | None = None) -> None:
                 manifest = r.json()
         except Exception as e:
             logger.warning(f"Could not fetch manifest for {name}: {e}")
+            logger.info(f"Trying HuggingFace fallback for '{name}'...")
+            _download_from_hf(name, abs_local)
             continue
 
         remote_files = manifest.get("files", [])
         if not remote_files:
-            logger.info(f"Weight set '{name}' not installed on main server, skipping")
+            logger.info(f"Weight set '{name}' not on main server, trying HuggingFace...")
+            _download_from_hf(name, abs_local)
             continue
 
         # Determine what's missing locally
@@ -107,3 +127,66 @@ def sync_weights(main_url: str, weight_names: list[str] | None = None) -> None:
                     logger.error(f"  Failed to download {rel_path}: {e}")
 
         logger.info(f"Weight sync complete for '{name}': {downloaded}/{len(to_download)} files")
+
+
+def _check_weights_exist(name: str, local_dir: str) -> bool:
+    """Quick check if a weight set has any real files."""
+    if not os.path.isdir(local_dir):
+        return False
+    for _root, _dirs, files in os.walk(local_dir):
+        for f in files:
+            if f.endswith((".pth", ".safetensors", ".bin", ".json")) and not f.startswith("."):
+                return True
+    return False
+
+
+def _download_from_hf(name: str, local_dir: str) -> None:
+    """Download weights directly from HuggingFace as a fallback."""
+    hf_info = HF_REPOS.get(name)
+    if not hf_info:
+        logger.warning(f"No HuggingFace repo configured for '{name}'")
+        return
+
+    if _check_weights_exist(name, local_dir):
+        logger.info(f"Weights '{name}' already present locally, skipping HuggingFace download")
+        return
+
+    repo = hf_info["repo"]
+    specific_files = hf_info.get("files")
+
+    os.makedirs(local_dir, exist_ok=True)
+
+    # Try huggingface-cli first, fall back to python -m
+    cmd = _build_hf_cmd(repo, local_dir, specific_files)
+
+    logger.info(f"Downloading '{name}' from HuggingFace ({repo})...")
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        if result.returncode == 0:
+            logger.info(f"HuggingFace download complete for '{name}'")
+        else:
+            error = result.stderr.strip()[-300:] if result.stderr else "Unknown error"
+            logger.error(f"HuggingFace download failed for '{name}': {error}")
+    except subprocess.TimeoutExpired:
+        logger.error(f"HuggingFace download timed out for '{name}'")
+    except FileNotFoundError:
+        logger.error("huggingface-cli not found. Install with: pip install huggingface-hub")
+
+
+def _build_hf_cmd(repo: str, local_dir: str, specific_files: list[str] | None = None) -> list[str]:
+    """Build the huggingface download command."""
+    import shutil
+
+    for candidate in ["huggingface-cli", "hf"]:
+        found = shutil.which(candidate)
+        if found:
+            cmd = [found, "download", repo, "--local-dir", local_dir]
+            if specific_files:
+                cmd.extend(specific_files)
+            return cmd
+
+    # Fallback: python -m huggingface_hub
+    cmd = [sys.executable, "-m", "huggingface_hub", "download", repo, "--local-dir", local_dir]
+    if specific_files:
+        cmd.extend(specific_files)
+    return cmd
