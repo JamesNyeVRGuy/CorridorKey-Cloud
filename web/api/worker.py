@@ -30,6 +30,10 @@ _vram_lock = threading.Lock()
 # GPU jobs stay in the queue for remote nodes to claim.
 _local_gpu_enabled: bool = True
 
+# Claim delay: local worker waits this many seconds before claiming a GPU job,
+# giving remote nodes a head start. 0 = no delay (claim immediately).
+_local_claim_delay: float = 0.0
+
 
 def set_local_gpu_enabled(enabled: bool) -> None:
     global _local_gpu_enabled
@@ -44,6 +48,19 @@ def get_local_gpu_enabled() -> bool:
     return _local_gpu_enabled
 
 
+def set_local_claim_delay(seconds: float) -> None:
+    global _local_claim_delay
+    _local_claim_delay = max(0.0, seconds)
+    logger.info(f"Local claim delay set to {_local_claim_delay:.1f}s")
+    from . import persist
+
+    persist.save_key("local_claim_delay", seconds)
+
+
+def get_local_claim_delay() -> float:
+    return _local_claim_delay
+
+
 def set_vram_limit(gb: float) -> None:
     global _vram_limit_gb
     _vram_limit_gb = max(0.0, gb)
@@ -55,7 +72,7 @@ def set_vram_limit(gb: float) -> None:
 
 def restore_settings() -> None:
     """Restore persisted settings on startup."""
-    global _local_gpu_enabled, _vram_limit_gb
+    global _local_gpu_enabled, _vram_limit_gb, _local_claim_delay
     from . import persist
 
     _local_gpu_enabled = persist.load_key("local_gpu_enabled", True)
@@ -64,6 +81,9 @@ def restore_settings() -> None:
         logger.info("Restored setting: local GPU processing disabled (remote-only)")
     if _vram_limit_gb > 0:
         logger.info(f"Restored setting: VRAM limit {_vram_limit_gb:.1f} GB")
+    _local_claim_delay = persist.load_key("local_claim_delay", 0.0)
+    if _local_claim_delay > 0:
+        logger.info(f"Restored setting: local claim delay {_local_claim_delay:.1f}s")
 
 
 def get_vram_limit() -> float:
@@ -373,6 +393,13 @@ def worker_loop(
         if not is_cpu and not _local_gpu_enabled:
             stop_event.wait(1.0)
             continue
+
+        # Claim delay: give remote nodes a head start on GPU jobs
+        if not is_cpu and _local_claim_delay > 0:
+            stop_event.wait(_local_claim_delay)
+            # Re-check if job was claimed by a node during the delay
+            if queue.next_job() is not peeked:
+                continue
 
         if is_cpu:
             job = queue.claim_job("local")

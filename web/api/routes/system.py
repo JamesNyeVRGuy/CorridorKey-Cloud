@@ -175,6 +175,21 @@ def set_local_gpu_setting(enabled: bool):
     return {"status": "ok", "enabled": enabled}
 
 
+@router.get("/claim-delay")
+def get_claim_delay_setting():
+    from ..worker import get_local_claim_delay
+
+    return {"seconds": get_local_claim_delay()}
+
+
+@router.post("/claim-delay")
+def set_claim_delay_setting(seconds: float):
+    from ..worker import set_local_claim_delay
+
+    set_local_claim_delay(seconds)
+    return {"status": "ok", "seconds": seconds}
+
+
 @router.post("/unload")
 def unload_engines():
     service = get_service()
