@@ -4,7 +4,10 @@
 	import { api } from '$lib/api';
 	import type { WeightInfo } from '$lib/api';
 	import { toast } from '$lib/stores/toasts';
+	import { getStoredUser } from '$lib/auth';
 	import InferenceForm from '../../components/InferenceForm.svelte';
+
+	let isAdmin = $state(false);
 
 	let unloading = $state(false);
 	let weights = $state<Record<string, WeightInfo>>({});
@@ -77,7 +80,14 @@
 		}
 	}
 
-	onMount(() => { loadWeights(); loadVramLimit(); });
+	onMount(() => {
+		const user = getStoredUser();
+		isAdmin = user?.tier === 'platform_admin';
+		if (isAdmin) {
+			loadWeights();
+			loadVramLimit();
+		}
+	});
 </script>
 
 <svelte:head>
@@ -90,6 +100,7 @@
 	</div>
 
 	<div class="settings-layout">
+		{#if isAdmin}
 		<section class="settings-card">
 			<h2 class="card-title mono">MODEL WEIGHTS</h2>
 			<p class="card-desc">Download model weights required for inference and alpha generation.</p>
@@ -130,6 +141,7 @@
 				</div>
 			{/if}
 		</section>
+		{/if}
 
 		<section class="settings-card">
 			<h2 class="card-title mono">UPLOAD BEHAVIOR</h2>
@@ -155,6 +167,7 @@
 			<InferenceForm bind:params={$defaultParams} bind:outputConfig={$defaultOutputConfig} />
 		</section>
 
+		{#if isAdmin}
 		<section class="settings-card">
 			<h2 class="card-title mono">GPU MANAGEMENT</h2>
 
@@ -181,6 +194,7 @@
 				{unloading ? 'Unloading...' : 'Unload All Models'}
 			</button>
 		</section>
+		{/if}
 	</div>
 </div>
 
