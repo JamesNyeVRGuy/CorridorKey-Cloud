@@ -68,6 +68,11 @@ async def lifespan(app: FastAPI):
     preview.set_clips_dir(clips_dir)
     persist.init(clips_dir)
 
+    # Set base clips dir for org isolation (CRKY-10)
+    from .org_isolation import set_base_clips_dir
+
+    set_base_clips_dir(clips_dir)
+
     # Restore persisted settings before starting workers
     from .worker import restore_settings
 
