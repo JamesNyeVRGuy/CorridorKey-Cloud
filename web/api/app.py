@@ -130,6 +130,11 @@ def create_app() -> FastAPI:
     """Application factory — call with uvicorn --factory."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
+    # Initialize Sentry error monitoring (no-op if CK_SENTRY_DSN not set)
+    from .sentry_setup import init_sentry
+
+    init_sentry()
+
     app = FastAPI(
         title="CorridorKey WebUI",
         version="1.0.0",

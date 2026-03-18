@@ -55,6 +55,7 @@ web = [
     "uvicorn[standard]>=0.34",
     "python-multipart>=0.0.9",
     "PyJWT>=2.8",
+    "sentry-sdk[fastapi]>=2.0",
 ]
 
 [dependency-groups]
