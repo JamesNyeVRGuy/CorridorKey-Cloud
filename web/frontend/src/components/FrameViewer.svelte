@@ -51,12 +51,16 @@
 
 	// Redraw histogram when frame changes or histogram toggled
 	$effect(() => {
-		// Subscribe to these so the effect re-runs
 		void currentFrame;
 		void selectedPass;
 		void showHistogram;
-		if (mainImgEl && showHistogram && mainImgEl.complete) {
+		if (!mainImgEl || !showHistogram) return;
+		if (mainImgEl.complete && mainImgEl.naturalWidth > 0) {
 			drawHistogram(mainImgEl);
+		} else {
+			// Image not loaded yet — wait for it
+			const handler = () => drawHistogram(mainImgEl!);
+			mainImgEl.addEventListener('load', handler, { once: true });
 		}
 	});
 
@@ -75,8 +79,19 @@
 		tmp.height = imgEl.naturalHeight;
 		const tctx = tmp.getContext('2d');
 		if (!tctx) return;
-		tctx.drawImage(imgEl, 0, 0);
-		const data = tctx.getImageData(0, 0, tmp.width, tmp.height).data;
+
+		let data: Uint8ClampedArray;
+		try {
+			tctx.drawImage(imgEl, 0, 0);
+			data = tctx.getImageData(0, 0, tmp.width, tmp.height).data;
+		} catch {
+			// Tainted canvas (CORS) or other error
+			ctx.clearRect(0, 0, w, h);
+			ctx.fillStyle = '#666';
+			ctx.font = '10px monospace';
+			ctx.fillText('Cannot read pixels', 10, 40);
+			return;
+		}
 
 		const rHist = new Uint32Array(256);
 		const gHist = new Uint32Array(256);
@@ -439,6 +454,7 @@
 				src={imgUrl}
 				alt="Frame {currentFrame} — {selectedPass}"
 				class:loading
+				crossorigin="anonymous"
 				onload={onImgLoad}
 				onerror={onImgError}
 			/>
