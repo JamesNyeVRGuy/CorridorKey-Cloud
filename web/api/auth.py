@@ -18,7 +18,7 @@ from typing import Any
 import jwt
 from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,8 @@ PUBLIC_PATHS = {
 PUBLIC_PREFIXES = (
     "/_app/",  # SvelteKit static assets
     "/ws",  # WebSocket (has its own auth, CRKY-13)
+    "/api/nodes/",  # Nodes use CK_AUTH_TOKEN, not JWT
+    "/api/system/weights/",  # Weight sync for nodes
 )
 
 
@@ -144,10 +146,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Extract Bearer token
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Missing Authorization header")
+            return JSONResponse(status_code=401, content={"detail": "Missing Authorization header"})
 
         token = auth_header[7:]
-        claims = _decode_jwt(token)
+        try:
+            claims = _decode_jwt(token)
+        except HTTPException as e:
+            return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
 
         # Build user context from JWT claims
         # Supabase JWTs contain: sub (user_id), email, role, app_metadata, user_metadata
