@@ -1,0 +1,35 @@
+# CorridorKey reverse proxy with automatic HTTPS.
+#
+# Caddy auto-provisions Let's Encrypt certificates.
+# Proxies to the CorridorKey web server on port 3000.
+# WebSocket upgrade handled automatically.
+
+{$CK_DOMAIN} {
+	# CorridorKey WebUI and API
+	reverse_proxy localhost:3000 {
+		# WebSocket support for real-time updates
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Real-IP {remote_host}
+	}
+
+	# Supabase Auth API (if running on same machine)
+	handle_path /auth/* {
+		reverse_proxy localhost:54324
+	}
+
+	# Supabase REST API (if running on same machine)
+	handle_path /rest/* {
+		reverse_proxy localhost:54321
+	}
+
+	# Security headers
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# Compress responses
+	encode gzip zstd
+}

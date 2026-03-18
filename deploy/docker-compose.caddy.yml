@@ -1,0 +1,30 @@
+# Caddy reverse proxy for TLS termination.
+#
+# Caddy auto-provisions Let's Encrypt certificates. Zero config for HTTPS.
+#
+# Run: docker compose -f docker-compose.caddy.yml up -d
+#
+# Requires:
+#   - CK_DOMAIN set in .env (e.g., corridorkey.yourdomain.com)
+#   - Port 80 and 443 open on the host
+#   - DNS A record pointing CK_DOMAIN to this machine's IP
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      - CK_DOMAIN=${CK_DOMAIN:?Set CK_DOMAIN in .env}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  caddy-data:
+  caddy-config:
