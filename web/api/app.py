@@ -148,7 +148,14 @@ def create_app() -> FastAPI:
     )
 
     # Auth middleware (must be added before GZip so it runs first)
-    from .auth import AUTH_ENABLED, AuthMiddleware
+    from .auth import AUTH_ENABLED, JWT_SECRET, AuthMiddleware
+
+    if AUTH_ENABLED and not JWT_SECRET:
+        raise RuntimeError(
+            "CK_AUTH_ENABLED is true but CK_JWT_SECRET is not set. "
+            "An empty JWT secret allows forged tokens. Set CK_JWT_SECRET "
+            "to the same value as your Supabase JWT_SECRET."
+        )
 
     app.add_middleware(AuthMiddleware)
     if AUTH_ENABLED:
