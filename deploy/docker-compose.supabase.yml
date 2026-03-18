@@ -78,7 +78,7 @@ services:
       - "${POSTGREST_PORT:-54321}:3000"
 
   supabase-studio:
-    image: supabase/studio:20241202-59d6e39
+    image: supabase/studio:latest
     restart: unless-stopped
     depends_on:
       supabase-db:
