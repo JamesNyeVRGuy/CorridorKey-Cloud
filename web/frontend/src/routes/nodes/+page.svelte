@@ -375,13 +375,6 @@
   -e CK_NODE_NAME=my-node \
   {setupInfo.image}</pre>
 					</div>
-
-					<div class="code-block">
-						<span class="code-label mono">Python (development)</span>
-						<pre class="code mono">CK_MAIN_URL={setupInfo.main_url} \
-CK_AUTH_TOKEN=&lt;paste token here&gt; \
-uv run python -m web.node</pre>
-					</div>
 				</div>
 
 				<!-- Active Tokens -->
