@@ -171,18 +171,16 @@ def create_app() -> FastAPI:
             "to the same value as your Supabase JWT_SECRET."
         )
 
-    # Rate limiting (CRKY-11) — added before auth middleware so auth
-    # runs first (Starlette LIFO: last added = outermost = runs first)
+    # Middleware execution order (Starlette LIFO: last added = outermost):
+    # Request → GZip → Auth (injects user) → RateLimit (checks user tier) → Route
     from .rate_limit import RateLimitMiddleware
 
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
+    app.add_middleware(AuthMiddleware)
     app.add_middleware(RateLimitMiddleware)
 
-    app.add_middleware(AuthMiddleware)
     if AUTH_ENABLED:
         logger.info("Auth enabled — JWT validation active on API routes")
-
-    # Compress responses > 1KB (speeds up file transfers to nodes)
-    app.add_middleware(GZipMiddleware, minimum_size=1000)
 
     # Health check (CRKY-21)
     @app.get("/api/health")
