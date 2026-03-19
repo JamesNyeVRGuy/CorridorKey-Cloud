@@ -63,10 +63,9 @@
 
 		changingPassword = true;
 		try {
-			// GoTrue password update requires the current access token
-			const gotrueUrl = localStorage.getItem('ck:gotrue_url') || 'http://localhost:54324';
+			// Password change via server proxy
 			const token = localStorage.getItem('ck:auth_token');
-			const res = await fetch(`${gotrueUrl}/user`, {
+			const res = await fetch('/api/auth/password', {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',

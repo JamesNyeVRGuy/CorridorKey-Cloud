@@ -8,8 +8,6 @@
 const TOKEN_KEY = 'ck:auth_token';
 const REFRESH_KEY = 'ck:refresh_token';
 const USER_KEY = 'ck:auth_user';
-const GOTRUE_URL_KEY = 'ck:gotrue_url';
-
 export interface AuthUser {
 	id: string;
 	email: string;
@@ -24,27 +22,16 @@ export interface AuthSession {
 	user: AuthUser;
 }
 
-/** Get the GoTrue URL, reading from localStorage or falling back to default. */
-function getGotrueUrl(): string {
-	return localStorage.getItem(GOTRUE_URL_KEY) || 'http://localhost:54324';
-}
-
-/** Initialize auth with the GoTrue URL. Persists to localStorage. */
-export async function initAuth(): Promise<{ enabled: boolean; gotrueUrl: string }> {
+/** Initialize auth — check if auth is enabled on the server. */
+export async function initAuth(): Promise<{ enabled: boolean }> {
 	const res = await fetch('/api/auth/status');
 	const data = await res.json();
-	if (data.auth_enabled && data.gotrue_url) {
-		localStorage.setItem(GOTRUE_URL_KEY, data.gotrue_url);
-	}
-	return { enabled: data.auth_enabled, gotrueUrl: data.gotrue_url || getGotrueUrl() };
+	return { enabled: data.auth_enabled };
 }
 
-/** Login with email/password. Returns session or throws. */
+/** Login with email/password via server proxy. Returns session or throws. */
 export async function login(email: string, password: string): Promise<AuthSession> {
-	// Ensure we have the latest GoTrue URL before login
-	await initAuth();
-	const url = getGotrueUrl();
-	const res = await fetch(`${url}/token?grant_type=password`, {
+	const res = await fetch('/api/auth/login', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ email, password })
@@ -52,7 +39,7 @@ export async function login(email: string, password: string): Promise<AuthSessio
 
 	if (!res.ok) {
 		const err = await res.json().catch(() => ({ msg: res.statusText }));
-		throw new Error(err.error_description || err.msg || 'Login failed');
+		throw new Error(err.error_description || err.msg || err.detail || 'Login failed');
 	}
 
 	const data = await res.json();
@@ -61,37 +48,18 @@ export async function login(email: string, password: string): Promise<AuthSessio
 	return session;
 }
 
-/** Signup with email/password. Returns session or throws. */
-export async function signup(email: string, password: string): Promise<AuthSession> {
-	const url = getGotrueUrl();
-	const res = await fetch(`${url}/signup`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ email, password })
-	});
-
-	if (!res.ok) {
-		const err = await res.json().catch(() => ({ msg: res.statusText }));
-		throw new Error(err.error_description || err.msg || 'Signup failed');
-	}
-
-	const data = await res.json();
-	const session = parseSession(data);
-	storeSession(session);
-	return session;
-}
-
-/** Refresh the access token using the stored refresh token. */
+/** Refresh the access token via server proxy. */
 export async function refreshToken(): Promise<AuthSession | null> {
 	const refresh = localStorage.getItem(REFRESH_KEY);
 	if (!refresh) return null;
 
-	const url = getGotrueUrl();
 	try {
-		const res = await fetch(`${url}/token?grant_type=refresh_token`, {
+		const res = await fetch('/api/auth/refresh', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ refresh_token: refresh })
+			headers: {
+				'Content-Type': 'application/json',
+				'X-Refresh-Token': refresh
+			}
 		});
 
 		if (!res.ok) {

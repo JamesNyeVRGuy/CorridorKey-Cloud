@@ -45,6 +45,8 @@ PUBLIC_PREFIXES = (
     "/_app/",  # SvelteKit static assets
     "/ws",  # WebSocket (has its own auth, CRKY-13)
     "/api/auth/status",  # Auth status check
+    "/api/auth/login",  # Login proxy to GoTrue
+    "/api/auth/refresh",  # Token refresh proxy to GoTrue
     "/api/auth/signup",  # Server-side signup
     "/api/auth/invite/validate",  # Invite validation (pre-signup)
     "/api/auth/invite/consume",  # Invite consumption (post-signup)

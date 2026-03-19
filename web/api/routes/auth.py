@@ -75,13 +75,93 @@ def get_current_user_info(request: Request):
         return {"authenticated": False, "tier": None}
 
 
+@router.post("/login")
+def login_proxy(req: LoginRequest):
+    """Proxy login through the server so external users don't need direct GoTrue access.
+
+    The browser calls this instead of GoTrue directly. The server forwards
+    the request to GoTrue using the internal URL and returns the session.
+    """
+    import urllib.request
+
+    gotrue_url = os.environ.get("CK_GOTRUE_INTERNAL_URL", os.environ.get("CK_GOTRUE_URL", "http://localhost:54324"))
+    body = json.dumps({"email": req.email, "password": req.password}).encode()
+    try:
+        gotrue_req = urllib.request.Request(
+            f"{gotrue_url}/token?grant_type=password",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(gotrue_req, timeout=10) as resp:
+            return json.loads(resp.read())
+    except Exception as e:
+        logger.error(f"GoTrue login proxy error: {e}")
+        raise HTTPException(status_code=401, detail="Login failed") from e
+
+
+@router.post("/refresh")
+def refresh_proxy(request: Request):
+    """Proxy token refresh through the server."""
+    import urllib.request
+
+    gotrue_url = os.environ.get("CK_GOTRUE_INTERNAL_URL", os.environ.get("CK_GOTRUE_URL", "http://localhost:54324"))
+    try:
+        refresh_token = request.headers.get("X-Refresh-Token", "")
+        if not refresh_token:
+            raise HTTPException(status_code=400, detail="X-Refresh-Token header required")
+        body = json.dumps({"refresh_token": refresh_token}).encode()
+        gotrue_req = urllib.request.Request(
+            f"{gotrue_url}/token?grant_type=refresh_token",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(gotrue_req, timeout=10) as resp:
+            return json.loads(resp.read())
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"GoTrue refresh proxy error: {e}")
+        raise HTTPException(status_code=401, detail="Token refresh failed") from e
+
+
+@router.put("/password")
+def change_password(request: Request):
+    """Proxy password change to GoTrue. Requires valid JWT."""
+    import urllib.request
+
+    gotrue_url = os.environ.get("CK_GOTRUE_INTERNAL_URL", os.environ.get("CK_GOTRUE_URL", "http://localhost:54324"))
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Authorization required")
+
+    try:
+        import asyncio
+
+        body = asyncio.get_event_loop().run_until_complete(request.body())
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request body") from None
+
+    try:
+        gotrue_req = urllib.request.Request(
+            f"{gotrue_url}/user",
+            data=body,
+            headers={"Content-Type": "application/json", "Authorization": auth_header},
+            method="PUT",
+        )
+        with urllib.request.urlopen(gotrue_req, timeout=10) as resp:
+            return json.loads(resp.read())
+    except Exception as e:
+        logger.error(f"GoTrue password change error: {e}")
+        raise HTTPException(status_code=400, detail="Password change failed") from e
+
+
 @router.get("/status")
 def auth_status():
     """Check if auth is enabled and return configuration hints."""
     return {
         "auth_enabled": AUTH_ENABLED,
-        "supabase_url": os.environ.get("CK_SUPABASE_URL", ""),
-        "gotrue_url": os.environ.get("CK_GOTRUE_URL", "http://localhost:54324"),
     }
 
 
