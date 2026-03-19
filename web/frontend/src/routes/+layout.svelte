@@ -255,7 +255,9 @@
 				<div class="activity-info mono">
 					<span class="activity-type">{rJob.job_type.replace('_', ' ')}</span>
 					<span class="activity-clip">{rJob.clip_name}</span>
-					{#if rJob.total_frames > 0}
+					{#if rJob.total_frames > 0 && rJob.current_frame >= rJob.total_frames}
+						<span class="activity-pct uploading">Uploading...</span>
+					{:else if rJob.total_frames > 0}
 						<span class="activity-pct">{Math.round((rJob.current_frame / rJob.total_frames) * 100)}%</span>
 					{/if}
 				</div>
@@ -495,6 +497,14 @@
 	.activity-pct {
 		color: var(--text-primary);
 		font-weight: 600;
+	}
+	.activity-pct.uploading {
+		color: var(--secondary);
+		animation: pulse-upload 1.5s ease-in-out infinite;
+	}
+	@keyframes pulse-upload {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.5; }
 	}
 
 	.activity-track {

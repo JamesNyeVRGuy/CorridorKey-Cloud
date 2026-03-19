@@ -44,12 +44,16 @@
 	</div>
 	{#if showLabel && total > 0}
 		<div class="progress-stats mono">
-			<span class="progress-main">{current}<span class="dim">/{total}</span> &middot; {pct.toFixed(0)}%</span>
-			{#if fps}
-				<span class="progress-detail">{fps} fps</span>
-			{/if}
-			{#if eta}
-				<span class="progress-detail">{eta} left</span>
+			{#if current >= total}
+				<span class="progress-main uploading">Uploading results...</span>
+			{:else}
+				<span class="progress-main">{current}<span class="dim">/{total}</span> &middot; {pct.toFixed(0)}%</span>
+				{#if fps}
+					<span class="progress-detail">{fps} fps</span>
+				{/if}
+				{#if eta}
+					<span class="progress-detail">{eta} left</span>
+				{/if}
 			{/if}
 		</div>
 	{/if}
@@ -116,6 +120,16 @@
 		font-size: 10px;
 		color: var(--text-secondary);
 		white-space: nowrap;
+	}
+
+	.uploading {
+		color: var(--secondary);
+		animation: pulse-text 1.5s ease-in-out infinite;
+	}
+
+	@keyframes pulse-text {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.5; }
 	}
 
 	@keyframes shimmer {
