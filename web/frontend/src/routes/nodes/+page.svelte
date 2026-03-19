@@ -3,6 +3,9 @@
 	import { nodes, refreshNodes, type NodeInfo } from '$lib/stores/nodes';
 	import { api } from '$lib/api';
 	import { toast } from '$lib/stores/toasts';
+	import { getStoredUser } from '$lib/auth';
+
+	const isAdmin = getStoredUser()?.tier === 'platform_admin';
 
 	interface LocalGPU {
 		index: number;
@@ -35,9 +38,11 @@
 	onMount(() => {
 		refreshNodes();
 		api.system2.localGpus().then((gpus) => (localGpus = gpus)).catch(() => {});
-		api.system2.getLocalGpu().then((r) => (localGpuEnabled = r.enabled)).catch(() => {});
-		api.system2.getClaimDelay().then((r) => (claimDelay = r.seconds)).catch(() => {});
 		api.system2.localCpu().then((c) => (localCpu = c)).catch(() => {});
+		if (isAdmin) {
+			api.system2.getLocalGpu().then((r) => (localGpuEnabled = r.enabled)).catch(() => {});
+			api.system2.getClaimDelay().then((r) => (claimDelay = r.seconds)).catch(() => {});
+		}
 		const interval = setInterval(refreshNodes, 5000);
 		const cpuInterval = setInterval(() => {
 			api.system2.localCpu().then((c) => (localCpu = c)).catch(() => {});
@@ -246,6 +251,7 @@
 	<section class="section">
 		<h2 class="section-title mono">LOCAL GPU PROCESSING</h2>
 		<div class="local-gpu-card">
+			{#if isAdmin}
 			<div class="local-gpu-toggle">
 				<div class="toggle-info">
 					<span class="toggle-label">Process GPU jobs on this machine</span>
@@ -284,6 +290,7 @@
 					/>
 					<span class="delay-val mono">{claimDelay === 0 ? 'OFF' : `${claimDelay}s`}</span>
 				</div>
+			{/if}
 			{/if}
 			{#if localGpus.length > 0}
 				<div class="local-gpu-list">
@@ -366,6 +373,7 @@
 									>{node.status.toUpperCase()}</span
 								>
 							{/if}
+							{#if node.can_manage}
 							<div class="node-actions">
 								<button
 									class="btn-icon"
@@ -447,10 +455,11 @@
 									</svg>
 								</button>
 							</div>
+							{/if}
 						</div>
 
-						<!-- Schedule editor (inline) -->
-						{#if editingSchedule === node.node_id}
+						<!-- Schedule editor (inline, management only) -->
+						{#if node.can_manage && editingSchedule === node.node_id}
 							<div class="schedule-editor">
 								<div class="schedule-row">
 									<label class="schedule-toggle">
@@ -485,8 +494,8 @@
 							</div>
 						{/if}
 
-						<!-- Job types editor (inline) -->
-						{#if editingTypes === node.node_id}
+						<!-- Job types editor (inline, management only) -->
+						{#if node.can_manage && editingTypes === node.node_id}
 							<div class="schedule-editor">
 								<p class="types-hint mono">Select which job types this node accepts. None selected = all types.</p>
 								<div class="types-grid">
