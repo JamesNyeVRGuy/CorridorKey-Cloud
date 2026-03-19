@@ -312,7 +312,10 @@ def get_next_job(node_id: str):
         return {"job": None, "reason": "paused" if node.paused else "outside_schedule"}
 
     queue = get_queue()
-    job = queue.claim_job(node_id, accepted_types=node.accepted_types or None)
+    # Org isolation (CRKY-19): private nodes only claim jobs from their org.
+    # Shared nodes (visibility=shared) can claim from any org.
+    claim_org = node.org_id if node.visibility != "shared" else None
+    job = queue.claim_job(node_id, accepted_types=node.accepted_types or None, org_id=claim_org)
     if job is None:
         return {"job": None}
 
