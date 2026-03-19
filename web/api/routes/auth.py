@@ -15,7 +15,7 @@ import os
 import secrets
 import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from ..auth import AUTH_ENABLED
@@ -47,6 +47,32 @@ class InviteTokenResponse(BaseModel):
     token: str
     created_at: float
     used: bool = False
+
+
+@router.get("/me")
+def get_current_user_info(request: Request):
+    """Return the current user's tier from their JWT.
+
+    Used by the /pending page to poll for approval. Decodes the JWT
+    from the Authorization header without requiring it to go through
+    the full middleware (this path is in PUBLIC_PREFIXES).
+    """
+    from ..auth import _decode_jwt
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return {"authenticated": False, "tier": None}
+    try:
+        claims = _decode_jwt(auth_header[7:])
+        app_metadata = claims.get("app_metadata", {})
+        return {
+            "authenticated": True,
+            "tier": app_metadata.get("tier", "pending"),
+            "email": claims.get("email", ""),
+            "user_id": claims.get("sub", ""),
+        }
+    except Exception:
+        return {"authenticated": False, "tier": None}
 
 
 @router.get("/status")

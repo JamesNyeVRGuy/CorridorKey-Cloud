@@ -48,6 +48,7 @@ PUBLIC_PREFIXES = (
     "/api/auth/signup",  # Server-side signup
     "/api/auth/invite/validate",  # Invite validation (pre-signup)
     "/api/auth/invite/consume",  # Invite consumption (post-signup)
+    "/api/auth/me",  # Current user tier check (pending page polling)
     "/api/nodes/",  # Nodes use CK_AUTH_TOKEN, not JWT
     "/api/system/weights/",  # Weight sync for nodes
 )
