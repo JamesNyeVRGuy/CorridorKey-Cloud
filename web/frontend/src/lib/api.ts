@@ -284,8 +284,11 @@ export const api = {
 		}
 	},
 	preview: {
-		url: (clipName: string, passName: string, frame: number) =>
-			`${BASE}/api/preview/${encodeURIComponent(clipName)}/${passName}/${frame}`
+		url: (clipName: string, passName: string, frame: number) => {
+			const base = `${BASE}/api/preview/${encodeURIComponent(clipName)}/${passName}/${frame}`;
+			const token = localStorage.getItem('ck:auth_token');
+			return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+		}
 	},
 	nodes: {
 		list: () => request<(import('$lib/stores/nodes').NodeInfo & { can_manage?: boolean })[]>('GET', '/api/farm'),
