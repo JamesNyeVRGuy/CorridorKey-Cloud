@@ -186,21 +186,9 @@ def node_heartbeat(node_id: str, req: NodeHeartbeatRequest):
         if req.cpu_stats:
             node.cpu_stats = req.cpu_stats
             node.record_health()
-        # Track contributed GPU-seconds when node is processing (CRKY-39)
-        if req.status == "busy" and node.org_id:
-            import time
-
-            now = time.time()
-            last = node.last_heartbeat
-            delta = min(now - last, 30.0)
-            if delta > 0:
-                gpu_count = max(1, len(node.gpus))
-                from ..gpu_credits import add_contributed
-
-                add_contributed(node.org_id, delta * gpu_count)
-                logger.info(f"Credit: +{delta:.1f}s x{gpu_count} GPU by {node_id} -> org {node.org_id}")
-        elif req.status == "busy" and not node.org_id:
-            logger.info(f"Credit: node {node_id} is busy but has no org_id — credits not tracked")
+        # Note: GPU credit contribution is tracked on job COMPLETION,
+        # not heartbeat. See report_job_result below. This prevents
+        # nodes from faking "busy" status to earn credits.
         manager.send_node_update(node.to_dict())
     return {"status": "ok"}
 
@@ -382,6 +370,18 @@ def report_job_result(node_id: str, req: JobResultRequest):
     if req.status == "completed":
         queue.complete_job(job)
         manager.send_job_status(job.id, JobStatus.COMPLETED.value, org_id=oid)
+
+        # Credit the node's org for contributed GPU time (verified server-side)
+        import time
+
+        node = registry.get_node(node_id)
+        if job.started_at and node and node.org_id:
+            elapsed = time.time() - job.started_at
+            if elapsed > 0:
+                from ..gpu_credits import add_contributed
+
+                add_contributed(node.org_id, elapsed)
+                logger.info(f"Credit: +{elapsed:.1f}s by node {node_id} -> org {node.org_id}")
     else:
         queue.fail_job(job, req.error_message or "Unknown error")
         manager.send_job_status(job.id, JobStatus.FAILED.value, error=req.error_message, org_id=oid)
