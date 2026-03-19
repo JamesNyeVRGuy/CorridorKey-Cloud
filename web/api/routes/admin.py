@@ -11,6 +11,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from ..audit import audit_from_request
 from ..auth import TIER_HIERARCHY, UserContext, get_current_user
 from ..orgs import get_org_store
 from ..tier_guard import require_admin
@@ -76,6 +77,8 @@ def approve_user(user_id: str, request: Request):
     org_store = get_org_store()
     org_store.ensure_personal_org(user_id, user.email)
 
+    audit_from_request("user.approved", request, target_type="user", target_id=user_id,
+                       details={"email": user.email})
     return {"status": "approved", "user": updated.to_dict() if updated else None}
 
 
@@ -91,6 +94,8 @@ def reject_user(user_id: str, request: Request):
         raise HTTPException(status_code=400, detail=f"User is already {user.tier}, not pending")
 
     updated = user_store.set_tier(user_id, "rejected", approved_by=admin.user_id)
+    audit_from_request("user.rejected", request, target_type="user", target_id=user_id,
+                       details={"email": user.email})
     return {"status": "rejected", "user": updated.to_dict() if updated else None}
 
 
@@ -107,7 +112,10 @@ def set_user_tier(user_id: str, req: SetTierRequest, request: Request):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    old_tier = user.tier
     updated = user_store.set_tier(user_id, req.tier)
+    audit_from_request("user.tier_changed", request, target_type="user", target_id=user_id,
+                       details={"old_tier": old_tier, "new_tier": req.tier})
     return {"status": "updated", "user": updated.to_dict() if updated else None}
 
 
@@ -133,3 +141,47 @@ def list_all_orgs():
         members = org_store.list_members(org.org_id)
         result.append({**org.to_dict(), "member_count": len(members)})
     return {"orgs": result}
+
+
+# --- Audit log ---
+
+
+@router.get("/audit")
+def get_audit_log(limit: int = 100, offset: int = 0, action: str | None = None):
+    """Query the audit log. Platform admin only. Paginated."""
+    from ..database import get_pg_conn
+
+    with get_pg_conn() as conn:
+        if conn is None:
+            return {"entries": [], "total": 0}
+        cur = conn.cursor()
+        where = ""
+        params: list = []
+        if action:
+            where = "WHERE action = %s"
+            params.append(action)
+
+        cur.execute(f"SELECT COUNT(*) FROM ck.audit_log {where}", params)
+        total = cur.fetchone()[0]
+
+        cur.execute(
+            f"""SELECT id, timestamp, actor_user_id, action, target_type,
+                       target_id, details, ip_address
+                FROM ck.audit_log {where}
+                ORDER BY timestamp DESC LIMIT %s OFFSET %s""",
+            [*params, limit, offset],
+        )
+        entries = []
+        for row in cur.fetchall():
+            entries.append({
+                "id": row[0],
+                "timestamp": row[1].isoformat() if row[1] else None,
+                "actor_user_id": row[2],
+                "action": row[3],
+                "target_type": row[4],
+                "target_id": row[5],
+                "details": row[6],
+                "ip_address": row[7],
+            })
+        cur.close()
+        return {"entries": entries, "total": total}
