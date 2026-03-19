@@ -99,6 +99,7 @@ def create_project(
     *,
     copy_source: bool = True,
     display_name: str | None = None,
+    root_dir: str | None = None,
 ) -> str:
     """Create a new project folder for one or more source videos.
 
@@ -127,7 +128,7 @@ def create_project(
     if not source_video_paths:
         raise ValueError("At least one source video path is required")
 
-    root = projects_root()
+    root = root_dir or projects_root()
 
     if display_name and display_name.strip():
         clean = display_name.strip()

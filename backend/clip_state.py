@@ -463,15 +463,29 @@ def scan_clips_dir(
                         entries.append(clip)
                         seen_names.add(clip.name)
             else:
-                # Flat clip dir or v1 project
-                clip = ClipEntry(name=item, root_path=item_path)
-                try:
-                    clip.find_assets()
-                    entries.append(clip)
-                    seen_names.add(clip.name)
-                except ClipScanError as e:
-                    # Skip folders without valid input assets
-                    logger.debug(str(e))
+                # Could be an org subdirectory containing projects,
+                # or a flat clip dir. Check for nested projects first.
+                has_nested_projects = any(
+                    is_v2_project(os.path.join(item_path, sub))
+                    for sub in os.listdir(item_path)
+                    if os.path.isdir(os.path.join(item_path, sub)) and not sub.startswith(".")
+                )
+                if has_nested_projects:
+                    # Org-level directory: recurse to find projects inside
+                    for clip in scan_clips_dir(item_path, allow_standalone_videos=False):
+                        if clip.name not in seen_names:
+                            entries.append(clip)
+                            seen_names.add(clip.name)
+                else:
+                    # Flat clip dir or v1 project
+                    clip = ClipEntry(name=item, root_path=item_path)
+                    try:
+                        clip.find_assets()
+                        entries.append(clip)
+                        seen_names.add(clip.name)
+                    except ClipScanError as e:
+                        # Skip folders without valid input assets
+                        logger.debug(str(e))
 
         elif allow_standalone_videos and os.path.isfile(item_path) and _is_video_file(item_path):
             # Standalone video file → treat as a clip needing extraction

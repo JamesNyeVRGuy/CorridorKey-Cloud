@@ -19,6 +19,7 @@ from backend.project import (
 )
 
 from ..deps import get_queue, get_service
+from ..org_isolation import resolve_clips_dir
 from ..path_security import safe_extract_zip
 from ..routes import clips as _clips_mod
 from ..storage_quota import check_storage_quota
@@ -77,17 +78,22 @@ async def upload_video(file: UploadFile, request: Request, name: str | None = No
             raise HTTPException(status_code=500, detail=f"Failed to save upload: {e}") from e
 
         try:
+            clips_dir = resolve_clips_dir(request)
             project_dir = create_project(
                 tmp_path,
                 copy_source=True,
                 display_name=name,
+                root_dir=clips_dir,
             )
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to create project: {e}") from e
 
     # Scan the new clips
     service = get_service()
-    clips = service.scan_clips(_clips_mod._clips_dir)
+    clips_dir = resolve_clips_dir(request)
+    clips = service.scan_clips(clips_dir)
     new_clips = [c for c in clips if c.root_path.startswith(project_dir)]
 
     # Auto-submit extraction jobs for any clip with a video source
@@ -116,7 +122,7 @@ async def upload_video(file: UploadFile, request: Request, name: str | None = No
 
 
 @router.post("/frames")
-async def upload_frames(file: UploadFile, name: str | None = None):
+async def upload_frames(file: UploadFile, request: Request, name: str | None = None):
     """Upload a zip of image frames to create a new clip.
 
     The zip should contain image files (PNG, EXR, JPG, etc.) at the
@@ -162,13 +168,13 @@ async def upload_frames(file: UploadFile, name: str | None = None):
         # Create project structure manually (create_project expects video)
         from datetime import datetime
 
-        from backend.project import _dedupe_path, projects_root, write_clip_json, write_project_json
+        from backend.project import _dedupe_path, write_clip_json, write_project_json
 
         clip_name = sanitize_stem(name or file.filename)
         timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
         folder_name = f"{timestamp}_{clip_name}"
 
-        root = projects_root()
+        root = resolve_clips_dir(request)
         project_dir, _ = _dedupe_path(root, folder_name)
         clips_dir = os.path.join(project_dir, "clips")
         clip_dir, clip_name = _dedupe_path(clips_dir, clip_name)
@@ -192,7 +198,7 @@ async def upload_frames(file: UploadFile, name: str | None = None):
         )
 
     service = get_service()
-    clips = service.scan_clips(_clips_mod._clips_dir)
+    clips = service.scan_clips(resolve_clips_dir(request))
     new_clips = [c for c in clips if c.root_path.startswith(project_dir)]
 
     return {
@@ -204,7 +210,7 @@ async def upload_frames(file: UploadFile, name: str | None = None):
 
 
 @router.post("/alpha/{clip_name}")
-async def upload_alpha_hint(clip_name: str, file: UploadFile):
+async def upload_alpha_hint(clip_name: str, file: UploadFile, request: Request):
     """Upload alpha hint frames (zip) for an existing clip.
 
     Extracts images into the clip's AlphaHint/ directory.
@@ -217,7 +223,7 @@ async def upload_alpha_hint(clip_name: str, file: UploadFile):
         raise HTTPException(status_code=400, detail="Expected a .zip file containing alpha hint frames")
 
     service = get_service()
-    clips = service.scan_clips(_clips_mod._clips_dir)
+    clips = service.scan_clips(resolve_clips_dir(request))
     clip = next((c for c in clips if c.name == clip_name), None)
     if clip is None:
         raise HTTPException(status_code=404, detail=f"Clip '{clip_name}' not found")
@@ -256,7 +262,7 @@ async def upload_alpha_hint(clip_name: str, file: UploadFile):
             dst = os.path.join(alpha_dir, fname)
             shutil.copy2(src, dst)
 
-    clips = service.scan_clips(_clips_mod._clips_dir)
+    clips = service.scan_clips(resolve_clips_dir(request))
     updated = next((c for c in clips if c.name == clip_name), None)
 
     return {
@@ -267,7 +273,7 @@ async def upload_alpha_hint(clip_name: str, file: UploadFile):
 
 
 @router.post("/mask/{clip_name}")
-async def upload_videomama_mask(clip_name: str, file: UploadFile):
+async def upload_videomama_mask(clip_name: str, file: UploadFile, request: Request):
     """Upload VideoMaMa mask hint frames (zip) for an existing clip.
 
     Extracts images into the clip's VideoMamaMaskHint/ directory.
@@ -280,7 +286,7 @@ async def upload_videomama_mask(clip_name: str, file: UploadFile):
         raise HTTPException(status_code=400, detail="Expected a .zip file containing mask frames")
 
     service = get_service()
-    clips = service.scan_clips(_clips_mod._clips_dir)
+    clips = service.scan_clips(resolve_clips_dir(request))
     clip = next((c for c in clips if c.name == clip_name), None)
     if clip is None:
         raise HTTPException(status_code=404, detail=f"Clip '{clip_name}' not found")
@@ -319,7 +325,7 @@ async def upload_videomama_mask(clip_name: str, file: UploadFile):
             dst = os.path.join(mask_dir, fname)
             shutil.copy2(src, dst)
 
-    clips = service.scan_clips(_clips_mod._clips_dir)
+    clips = service.scan_clips(resolve_clips_dir(request))
     updated = next((c for c in clips if c.name == clip_name), None)
 
     return {

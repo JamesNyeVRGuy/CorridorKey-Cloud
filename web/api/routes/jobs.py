@@ -203,9 +203,9 @@ def submit_sharded_inference(req: ShardedInferenceRequest, request: Request):
 
     for clip_name in req.clip_names:
         # Get frame count
-        from . import clips as _clips_mod
+        from ..org_isolation import resolve_clips_dir
 
-        clips = service.scan_clips(_clips_mod._clips_dir)
+        clips = service.scan_clips(resolve_clips_dir(request))
         clip = next((c for c in clips if c.name == clip_name), None)
         if clip is None:
             continue
@@ -341,11 +341,11 @@ def submit_pipeline(req: PipelineJobRequest, request: Request):
     pipeline params stored on the job). This ensures each step finishes
     before the next begins.
     """
-    from ..routes.clips import _clips_dir
+    from ..org_isolation import resolve_clips_dir
 
     queue = get_queue()
     service = get_service()
-    clips = service.scan_clips(_clips_dir)
+    clips = service.scan_clips(resolve_clips_dir(request))
     clip_map = {c.name: c for c in clips}
 
     # Pipeline params stored on each job so the worker can chain the next step
