@@ -288,14 +288,32 @@
 			</div>
 
 			<div class="detail-sidebar">
+				{#if clip?.has_outputs}
+					<!-- Post-inference: download is hero action -->
+					<div class="action-buttons">
+						<a href={`/api/preview/${encodeURIComponent(clip.name)}/processed/download?token=${encodeURIComponent(localStorage.getItem('ck:auth_token') || '')}`} class="btn btn-hero download-hero">
+							<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M4 7l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 12h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+							Download Processed (EXR)
+						</a>
+						<div class="download-passes mono">
+							<a href={`/api/preview/${encodeURIComponent(clip.name)}/fg/download?token=${encodeURIComponent(localStorage.getItem('ck:auth_token') || '')}`} class="pass-dl">FG</a>
+							<a href={`/api/preview/${encodeURIComponent(clip.name)}/matte/download?token=${encodeURIComponent(localStorage.getItem('ck:auth_token') || '')}`} class="pass-dl">Matte</a>
+							<a href={`/api/preview/${encodeURIComponent(clip.name)}/comp/download?token=${encodeURIComponent(localStorage.getItem('ck:auth_token') || '')}`} class="pass-dl">Comp</a>
+						</div>
+						<div class="divider-label mono">REPROCESS</div>
+					</div>
+				{/if}
+
 				<InferenceForm bind:params bind:outputConfig />
 
 				<div class="action-buttons">
 					{#if canRunPipeline}
-						<button class="btn btn-hero" onclick={runPipeline} disabled={submitting}>
-							Run Full Pipeline
+						<button class="btn {clip?.has_outputs ? 'btn-secondary' : 'btn-hero'}" onclick={runPipeline} disabled={submitting}>
+							{clip?.has_outputs ? 'Re-run Full Pipeline' : 'Run Full Pipeline'}
 						</button>
-						<div class="divider-label mono">OR RUN INDIVIDUAL STEPS</div>
+						{#if !clip?.has_outputs}
+							<div class="divider-label mono">OR RUN INDIVIDUAL STEPS</div>
+						{/if}
 					{/if}
 
 					{#if Object.keys(costEstimates).length > 0 && clip && clip.frame_count > 0}
@@ -610,4 +628,19 @@
 	.est-label { color: var(--text-tertiary); margin-bottom: 2px; }
 	.est-row { color: var(--text-secondary); padding-left: var(--sp-2); }
 	.est-total { color: var(--accent); font-weight: 600; padding-top: 2px; border-top: 1px solid var(--border); }
+
+	.download-hero {
+		display: flex; align-items: center; gap: var(--sp-2); justify-content: center;
+		text-decoration: none;
+	}
+	.download-passes {
+		display: flex; gap: var(--sp-2); justify-content: center;
+	}
+	.pass-dl {
+		font-size: 11px; padding: 4px 12px;
+		background: var(--surface-3); border: 1px solid var(--border);
+		border-radius: var(--radius-sm); color: var(--text-secondary);
+		text-decoration: none; transition: all 0.15s;
+	}
+	.pass-dl:hover { color: var(--accent); border-color: var(--accent); }
 </style>

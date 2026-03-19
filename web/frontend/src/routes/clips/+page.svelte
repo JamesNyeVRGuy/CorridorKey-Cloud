@@ -246,18 +246,30 @@
 	async function handleFiles(files: FileList | File[]) {
 		uploading = true;
 		uploadError = null;
+		let lastUploadedClips: string[] = [];
 		try {
 			for (const file of files) {
+				let result: any;
 				if (isVideo(file.name)) {
-					await api.upload.video(file, undefined, $autoExtractFrames);
+					result = await api.upload.video(file, undefined, $autoExtractFrames);
 				} else if (isZip(file.name)) {
-					await api.upload.frames(file);
+					result = await api.upload.frames(file);
 				} else {
 					uploadError = `Unsupported: ${file.name}. Use videos (.mp4, .mov, etc.) or zipped frames (.zip).`;
 					continue;
 				}
+				// Track uploaded clip names for navigation
+				if (result?.clips) {
+					for (const c of result.clips) {
+						if (c.name) lastUploadedClips.push(c.name);
+					}
+				}
 			}
 			await Promise.all([loadProjects(), refreshClips(), refreshJobs()]);
+			// Navigate to the first uploaded clip
+			if (lastUploadedClips.length === 1) {
+				goto(`/clips/${encodeURIComponent(lastUploadedClips[0])}`);
+			}
 		} catch (e) {
 			uploadError = e instanceof Error ? e.message : String(e);
 		} finally {
@@ -420,6 +432,7 @@
 							ondrop={async (e) => {
 								e.preventDefault();
 								e.currentTarget.classList.remove('drop-target');
+								// Handle clip move (dragging an existing clip between projects)
 								const clipName = e.dataTransfer?.getData('text/clip-name');
 								if (clipName) {
 									try {
@@ -428,6 +441,11 @@
 									} catch (err) {
 										toast.error(err instanceof Error ? err.message : String(err));
 									}
+									return;
+								}
+								// Handle file drop (uploading new files into this project)
+								if (e.dataTransfer?.files.length) {
+									handleFiles(e.dataTransfer.files);
 								}
 							}}
 						>
