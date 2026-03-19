@@ -216,3 +216,44 @@ def get_storage_info(org_id: str, request: Request):
     from ..storage_quota import get_org_storage_info
 
     return get_org_storage_info(org_id)
+
+
+# --- IP Allowlisting (CRKY-25) ---
+
+
+class IPAllowlistRequest(BaseModel):
+    cidrs: list[str] = []  # Empty = remove allowlist (no restriction)
+
+
+@router.get("/{org_id}/ip-allowlist", dependencies=[Depends(require_authenticated)])
+def get_ip_allowlist(org_id: str, request: Request):
+    """Get the IP allowlist for an org. Org admin or platform admin."""
+    user = _get_user(request)
+    store = get_org_store()
+    if not store.get_org(org_id):
+        raise HTTPException(status_code=404, detail="Org not found")
+    if not user.is_admin and not store.is_org_admin(org_id, user.user_id):
+        raise HTTPException(status_code=403, detail="Only org admins can view the allowlist")
+    from ..ip_allowlist import _load_allowlists
+
+    allowlists = _load_allowlists()
+    return {"org_id": org_id, "cidrs": allowlists.get(org_id, [])}
+
+
+@router.put("/{org_id}/ip-allowlist", dependencies=[Depends(require_authenticated)])
+def set_ip_allowlist(org_id: str, req: IPAllowlistRequest, request: Request):
+    """Set the IP allowlist for an org. Org admin or platform admin. Empty list = remove."""
+    user = _get_user(request)
+    store = get_org_store()
+    if not store.get_org(org_id):
+        raise HTTPException(status_code=404, detail="Org not found")
+    if not user.is_admin and not store.is_org_admin(org_id, user.user_id):
+        raise HTTPException(status_code=403, detail="Only org admins can set the allowlist")
+    from ..ip_allowlist import save_allowlist
+
+    save_allowlist(org_id, req.cidrs)
+    from ..audit import audit_from_request
+
+    audit_from_request("org.ip_allowlist_updated", request, target_type="org", target_id=org_id,
+                       details={"cidrs": req.cidrs})
+    return {"org_id": org_id, "cidrs": req.cidrs}
