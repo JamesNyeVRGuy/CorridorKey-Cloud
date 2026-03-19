@@ -17,14 +17,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
-_PG_URL = os.environ.get("CK_DATABASE_URL", "")
 
 
 @dataclass
@@ -152,32 +149,29 @@ class UserStore:
 def _update_supabase_tier(user_id: str, tier: str) -> None:
     """Update the user's tier in Supabase auth.users.raw_app_meta_data.
 
-    This ensures the next JWT refresh picks up the new tier without
-    requiring manual SQL. Fails silently if CK_DATABASE_URL is not set.
+    Uses the shared connection pool (CRKY-64) instead of creating a
+    separate unmanaged connection. Fails silently if Postgres is not
+    available.
     """
-    if not _PG_URL:
-        logger.debug("No CK_DATABASE_URL — skipping Supabase tier update")
-        return
-    try:
-        import psycopg2
+    from .database import get_pg_conn
 
-        conn = psycopg2.connect(_PG_URL)
-        conn.autocommit = True
-        cur = conn.cursor()
-        meta_patch = json.dumps({"tier": tier})
-        cur.execute(
-            "UPDATE auth.users SET raw_app_meta_data = raw_app_meta_data || %s::jsonb WHERE id = %s::uuid",
-            (meta_patch, user_id),
-        )
-        updated = cur.rowcount
-        cur.close()
-        conn.close()
-        if updated:
-            logger.info(f"Updated Supabase tier for {user_id} to {tier}")
-        else:
-            logger.warning(f"No Supabase auth.users row found for {user_id}")
-    except ImportError:
-        logger.debug("psycopg2 not available — skipping Supabase tier update")
+    try:
+        with get_pg_conn() as conn:
+            if conn is None:
+                logger.debug("No Postgres connection — skipping Supabase tier update")
+                return
+            cur = conn.cursor()
+            meta_patch = json.dumps({"tier": tier})
+            cur.execute(
+                "UPDATE auth.users SET raw_app_meta_data = raw_app_meta_data || %s::jsonb WHERE id = %s::uuid",
+                (meta_patch, user_id),
+            )
+            updated = cur.rowcount
+            cur.close()
+            if updated:
+                logger.info(f"Updated Supabase tier for {user_id} to {tier}")
+            else:
+                logger.warning(f"No Supabase auth.users row found for {user_id}")
     except Exception as e:
         logger.warning(f"Failed to update Supabase tier for {user_id}: {e}")
 
