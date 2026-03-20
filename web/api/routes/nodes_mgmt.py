@@ -170,7 +170,7 @@ def pause_node(node_id: str, request: Request):
     node = _require_node_access(request, node_id, manage=True)
     node.paused = True
     _save_node_config(node_id, node)
-    manager.send_node_update(node.to_dict())
+    manager.send_node_update(node.to_dict(), org_id=node.org_id)
     return {"status": "paused"}
 
 
@@ -180,7 +180,7 @@ def resume_node(node_id: str, request: Request):
     node = _require_node_access(request, node_id, manage=True)
     node.paused = False
     _save_node_config(node_id, node)
-    manager.send_node_update(node.to_dict())
+    manager.send_node_update(node.to_dict(), org_id=node.org_id)
     return {"status": "resumed"}
 
 
@@ -196,7 +196,7 @@ def set_node_schedule(node_id: str, req: NodeScheduleRequest, request: Request):
     node = _require_node_access(request, node_id, manage=True)
     node.schedule = NodeSchedule(enabled=req.enabled, start=req.start, end=req.end)
     _save_node_config(node_id, node)
-    manager.send_node_update(node.to_dict())
+    manager.send_node_update(node.to_dict(), org_id=node.org_id)
     return node.schedule.to_dict()
 
 
@@ -206,7 +206,7 @@ def set_accepted_types(node_id: str, req: AcceptedTypesRequest, request: Request
     node = _require_node_access(request, node_id, manage=True)
     node.accepted_types = req.accepted_types
     _save_node_config(node_id, node)
-    manager.send_node_update(node.to_dict())
+    manager.send_node_update(node.to_dict(), org_id=node.org_id)
     return {"accepted_types": node.accepted_types}
 
 
@@ -226,16 +226,17 @@ def set_node_visibility(node_id: str, req: SetVisibilityRequest, request: Reques
     node = _require_node_access(request, node_id, manage=True)
     node.visibility = req.visibility
     _save_node_config(node_id, node)
-    manager.send_node_update(node.to_dict())
+    manager.send_node_update(node.to_dict(), org_id=node.org_id)
     return {"visibility": node.visibility}
 
 
 @router.delete("/{node_id}")
 def unregister_node(node_id: str, request: Request):
     """Remove a node — requires org admin."""
-    _require_node_access(request, node_id, manage=True)
+    node = _require_node_access(request, node_id, manage=True)
+    oid = node.org_id
     registry.unregister(node_id)
-    manager.send_node_offline(node_id)
+    manager.send_node_offline(node_id, org_id=oid)
     return {"status": "unregistered"}
 
 

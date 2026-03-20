@@ -17,10 +17,16 @@ from .openapi_config import API_VERSION
 
 
 class APIVersionMiddleware(BaseHTTPMiddleware):
-    """Injects X-API-Version header on API responses and counts requests."""
+    """Injects X-API-Version, security headers, and counts API requests."""
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         response = await call_next(request)
+
+        # Security headers (CRKY-87)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
         is_api = request.url.path.startswith("/api/") or request.url.path in ("/docs", "/redoc", "/openapi.json")
         if is_api:
             response.headers["X-API-Version"] = API_VERSION

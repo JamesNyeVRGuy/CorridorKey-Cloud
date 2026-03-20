@@ -170,7 +170,7 @@ def register_node(req: NodeRegisterRequest, request: Request):
     node = registry.get_node(req.node_id)
     if node:
         _restore_node_config(node)
-        manager.send_node_update(node.to_dict())
+        manager.send_node_update(node.to_dict(), org_id=node.org_id)
     return {"status": "registered", "node_id": req.node_id}
 
 
@@ -189,14 +189,15 @@ def node_heartbeat(node_id: str, req: NodeHeartbeatRequest):
         # Note: GPU credit contribution is tracked on job COMPLETION,
         # not heartbeat. See report_job_result below. This prevents
         # nodes from faking "busy" status to earn credits.
-        manager.send_node_update(node.to_dict())
+        manager.send_node_update(node.to_dict(), org_id=node.org_id)
     return {"status": "ok"}
 
 
 @router.delete("/{node_id}")
 def unregister_node(node_id: str):
     registry.unregister(node_id)
-    manager.send_node_offline(node_id)
+    node = registry.get_node(node_id)
+    manager.send_node_offline(node_id, org_id=node.org_id if node else None)
     return {"status": "unregistered"}
 
 

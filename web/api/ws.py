@@ -39,9 +39,18 @@ class ConnectionManager:
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
 
+    # Max concurrent WebSocket connections per user (0 = unlimited)
+    MAX_CONNECTIONS_PER_USER = 10
+
     async def connect(
         self, ws: WebSocket, user_id: str = "", org_ids: list[str] | None = None, is_admin: bool = False
     ) -> None:
+        # Enforce per-user connection limit
+        if user_id and self.MAX_CONNECTIONS_PER_USER > 0:
+            user_conns = sum(1 for c in self._connections if c.user_id == user_id)
+            if user_conns >= self.MAX_CONNECTIONS_PER_USER:
+                await ws.close(code=4029, reason="Too many connections")
+                return
         await ws.accept()
         conn = AuthenticatedConnection(ws=ws, user_id=user_id, org_ids=org_ids or [], is_admin=is_admin)
         self._connections.append(conn)
@@ -126,20 +135,22 @@ class ConnectionManager:
             }
         )
 
-    def send_node_update(self, node_data: dict) -> None:
+    def send_node_update(self, node_data: dict, org_id: str | None = None) -> None:
         self.broadcast_sync(
             {
                 "type": "node:update",
                 "data": node_data,
-            }
+            },
+            org_id=org_id,
         )
 
-    def send_node_offline(self, node_id: str) -> None:
+    def send_node_offline(self, node_id: str, org_id: str | None = None) -> None:
         self.broadcast_sync(
             {
                 "type": "node:offline",
                 "data": {"node_id": node_id},
-            }
+            },
+            org_id=org_id,
         )
 
 
