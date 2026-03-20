@@ -35,6 +35,8 @@ PUBLIC_PATHS = {
     "/api/auth/callback",
     "/api/auth/status",
     "/api/health",
+    # /metrics is public for Prometheus scraping (same Docker network).
+    # In production, restrict external access via reverse proxy (Caddy).
     "/metrics",
 }
 

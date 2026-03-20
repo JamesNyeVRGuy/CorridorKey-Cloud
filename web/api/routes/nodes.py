@@ -570,8 +570,11 @@ async def upload_result_bundle(node_id: str, clip_name: str, pass_name: str, req
     target_dir = os.path.join(clip.root_path, subdir)
     os.makedirs(target_dir, exist_ok=True)
 
-    # Read the tar stream from the request body
+    # Read the tar stream from the request body (limit 2GB to prevent memory exhaustion)
+    max_tar_bytes = 2 * 1024 * 1024 * 1024
     body = await request.body()
+    if len(body) > max_tar_bytes:
+        raise HTTPException(status_code=413, detail="Tar bundle too large (max 2GB)")
     buf = io.BytesIO(body)
     count = 0
     try:
