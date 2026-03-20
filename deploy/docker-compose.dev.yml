@@ -145,8 +145,17 @@ services:
       - CK_DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/${POSTGRES_DB:-corridorkey}
       - CK_MIGRATION_URL=postgresql://supabase_admin:${POSTGRES_PASSWORD}@supabase-db:5432/${POSTGRES_DB:-corridorkey}
       - CK_SENTRY_DSN=${CK_SENTRY_DSN:-}
-      - CK_METRICS_ENABLED=${CK_METRICS_ENABLED:-false}
+      - CK_METRICS_ENABLED=${CK_METRICS_ENABLED:-true}
       - CK_ENVIRONMENT=${CK_ENVIRONMENT:-development}
+      - CK_LOG_FORMAT=${CK_LOG_FORMAT:-text}
+      - CK_DOCS_PUBLIC=${CK_DOCS_PUBLIC:-true}
+      - CK_STORAGE_BACKEND=${CK_STORAGE_BACKEND:-local}
+      - CK_S3_BUCKET=${CK_S3_BUCKET:-}
+      - CK_S3_PREFIX=${CK_S3_PREFIX:-}
+      - CK_S3_ENDPOINT_URL=${CK_S3_ENDPOINT_URL:-}
+      - CK_S3_REGION=${CK_S3_REGION:-us-east-1}
+      - CK_S3_ACCESS_KEY_ID=${CK_S3_ACCESS_KEY_ID:-}
+      - CK_S3_SECRET_ACCESS_KEY=${CK_S3_SECRET_ACCESS_KEY:-}
     volumes:
       - ${CK_PROJECTS_DIR:-./Projects}:/app/Projects
       - ${CK_WEIGHTS_DIR:-./weights}/corridorkey:/app/CorridorKeyModule/checkpoints
