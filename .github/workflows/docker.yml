@@ -3,7 +3,7 @@ name: Build & Publish Docker Images
 on:
   push:
     branches: [main, feat/distributed-nodes, feat/cloud-platform]
-    tags: ["v*", "cloud-*"]
+    tags: ["v*", "cloud", "cloud-*", "stable"]
     paths:
       - "web/**"
       - "backend/**"
@@ -55,7 +55,8 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=cloud,enable=${{ startsWith(github.ref, 'refs/tags/cloud-') }}
+            type=raw,value=cloud,enable=${{ startsWith(github.ref, 'refs/tags/cloud') }}
+            type=raw,value=stable,enable=${{ github.ref == 'refs/tags/stable' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
