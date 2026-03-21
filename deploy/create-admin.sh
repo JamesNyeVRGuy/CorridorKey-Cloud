@@ -11,7 +11,8 @@ cd "$(dirname "$0")"
 EMAIL="${1:?Usage: ./create-admin.sh <email> [password]}"
 PASSWORD="${2:-changeme123}"
 
-# Load env
+# Load env (supports both unified .env and legacy .env.supabase)
+source .env 2>/dev/null || true
 source .env.supabase 2>/dev/null || true
 
 GOTRUE_PORT="${GOTRUE_PORT:-54324}"
