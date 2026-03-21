@@ -185,7 +185,7 @@ class FileTransfer:
             if count > 0:
                 return count
         except Exception as e:
-            logger.debug(f"Bundle upload failed, falling back to per-file: {e}")
+            logger.warning(f"Bundle upload failed, falling back to per-file: {e}")
 
         # Per-file fallback
         count = 0
