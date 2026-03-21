@@ -305,6 +305,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Nodes — CorridorKey</title>
+</svelte:head>
+
 <div class="page">
 	<header class="page-header">
 		<h1 class="mono">RENDER FARM</h1>
