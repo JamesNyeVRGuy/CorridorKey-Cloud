@@ -171,7 +171,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Skip auth for public paths
         if path in PUBLIC_PATHS or any(path.startswith(p) for p in PUBLIC_PREFIXES):
-            return await call_next(request)
+            # Weight sync endpoints are public for GET (nodes) but not POST (admin)
+            if path.startswith("/api/system/weights/") and request.method == "POST":
+                pass  # fall through to JWT validation below
+            else:
+                return await call_next(request)
 
         # Protected docs routes handle their own auth checks (CRKY-32).
         # Let the request through so the route handler can inspect request.state.user.
