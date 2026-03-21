@@ -1,9 +1,10 @@
-"""Weight sync — downloads model weights from the main machine on node startup.
+"""Weight sync — downloads model weights on node startup.
 
-Checks which weights are installed locally and pulls missing files from
-the main server's /api/system/weights/{name}/file/ endpoints. Falls back
-to downloading directly from HuggingFace if the main server doesn't have
-weights installed.
+Priority order:
+1. HuggingFace (canonical source, CDN-backed, fast)
+2. Main server (LAN fallback for air-gapped environments)
+
+Checks which weights are installed locally and pulls missing ones.
 """
 
 from __future__ import annotations
@@ -47,13 +48,12 @@ def _repo_root() -> str:
 
 
 def sync_weights(main_url: str, weight_names: list[str] | None = None) -> None:
-    """Download missing weights from the main server.
+    """Download missing weights. Tries HuggingFace first, falls back to main server.
 
     Args:
-        main_url: Base URL of the main CorridorKey server.
+        main_url: Base URL of the main CorridorKey server (LAN fallback).
         weight_names: Which weight sets to sync. None = all available.
     """
-    base = main_url.rstrip("/")
     root = _repo_root()
 
     if weight_names is None:
@@ -67,66 +67,81 @@ def sync_weights(main_url: str, weight_names: list[str] | None = None) -> None:
 
         abs_local = os.path.join(root, local_dir)
 
-        # Fetch manifest from main
+        # Already have weights?
+        if _check_weights_exist(name, abs_local):
+            logger.info(f"Weights '{name}' already present")
+            continue
+
+        # Try 1: HuggingFace (canonical source, CDN-backed)
         try:
-            with httpx.Client(timeout=30) as client:
-                r = client.get(f"{base}/api/system/weights/{name}/manifest")
-                if r.status_code != 200:
-                    logger.debug(f"Skipping {name}: manifest returned {r.status_code}")
-                    continue
-                manifest = r.json()
+            _download_from_hf(name, abs_local)
+            if _check_weights_exist(name, abs_local):
+                continue  # Success
         except Exception as e:
-            logger.warning(f"Could not fetch manifest for {name}: {e}")
-            logger.info(f"Trying HuggingFace fallback for '{name}'...")
-            _download_from_hf(name, abs_local)
-            continue
+            logger.debug(f"HuggingFace download failed for '{name}': {e}")
 
-        remote_files = manifest.get("files", [])
-        if not remote_files:
-            logger.info(f"Weight set '{name}' not on main server, trying HuggingFace...")
-            _download_from_hf(name, abs_local)
-            continue
+        # Try 2: Main server (LAN fallback for air-gapped environments)
+        _download_from_server(main_url, name, abs_local)
 
-        # Determine what's missing locally
-        to_download = []
-        for entry in remote_files:
+
+def _download_from_server(main_url: str, name: str, abs_local: str) -> None:
+    """Download weights from the main CorridorKey server."""
+    base = main_url.rstrip("/")
+    try:
+        with httpx.Client(timeout=30) as client:
+            r = client.get(f"{base}/api/system/weights/{name}/manifest")
+            if r.status_code != 200:
+                logger.debug(f"Server weight manifest for '{name}': HTTP {r.status_code}")
+                return
+            manifest = r.json()
+    except Exception as e:
+        logger.warning(f"Could not fetch manifest for '{name}' from server: {e}")
+        return
+
+    remote_files = manifest.get("files", [])
+    if not remote_files:
+        logger.debug(f"No files for '{name}' on server")
+        return
+
+    # Determine what's missing locally
+    to_download = []
+    for entry in remote_files:
+        rel_path = entry["path"]
+        local_path = os.path.join(abs_local, rel_path)
+        if os.path.isfile(local_path):
+            local_size = os.path.getsize(local_path)
+            if local_size == entry["size"]:
+                continue
+        to_download.append(entry)
+
+    if not to_download:
+        logger.info(f"Weights '{name}' up to date from server ({len(remote_files)} files)")
+        return
+
+    total_mb = sum(f["size"] for f in to_download) / (1024 * 1024)
+    logger.info(f"Downloading {len(to_download)} files for '{name}' from server ({total_mb:.0f} MB)...")
+
+    downloaded = 0
+    with httpx.Client(timeout=600) as client:
+        for entry in to_download:
             rel_path = entry["path"]
             local_path = os.path.join(abs_local, rel_path)
-            if os.path.isfile(local_path):
-                local_size = os.path.getsize(local_path)
-                if local_size == entry["size"]:
-                    continue  # already have it
-            to_download.append(entry)
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
 
-        if not to_download:
-            logger.info(f"Weights '{name}' already up to date ({len(remote_files)} files)")
-            continue
+            url = f"{base}/api/system/weights/{name}/file/{rel_path}"
+            try:
+                with client.stream("GET", url) as resp:
+                    resp.raise_for_status()
+                    with open(local_path, "wb") as f:
+                        for chunk in resp.iter_bytes(chunk_size=8 * 1024 * 1024):
+                            f.write(chunk)
+                downloaded += 1
+                size_mb = entry["size"] / (1024 * 1024)
+                logger.info(f"  [{downloaded}/{len(to_download)}] {rel_path} ({size_mb:.1f} MB)")
+            except Exception as e:
+                logger.error(f"  Failed to download {rel_path}: {e}")
 
-        total_bytes = sum(f["size"] for f in to_download)
-        total_mb = total_bytes / (1024 * 1024)
-        logger.info(f"Downloading {len(to_download)} files for '{name}' ({total_mb:.0f} MB)...")
-
-        downloaded = 0
-        with httpx.Client(timeout=600) as client:
-            for entry in to_download:
-                rel_path = entry["path"]
-                local_path = os.path.join(abs_local, rel_path)
-                os.makedirs(os.path.dirname(local_path), exist_ok=True)
-
-                url = f"{base}/api/system/weights/{name}/file/{rel_path}"
-                try:
-                    with client.stream("GET", url) as resp:
-                        resp.raise_for_status()
-                        with open(local_path, "wb") as f:
-                            for chunk in resp.iter_bytes(chunk_size=8 * 1024 * 1024):
-                                f.write(chunk)
-                    downloaded += 1
-                    size_mb = entry["size"] / (1024 * 1024)
-                    logger.info(f"  [{downloaded}/{len(to_download)}] {rel_path} ({size_mb:.1f} MB)")
-                except Exception as e:
-                    logger.error(f"  Failed to download {rel_path}: {e}")
-
-        logger.info(f"Weight sync complete for '{name}': {downloaded}/{len(to_download)} files")
+    logger.info(f"Server weight sync for '{name}': {downloaded}/{len(to_download)} files")
 
 
 def _check_weights_exist(name: str, local_dir: str) -> bool:
