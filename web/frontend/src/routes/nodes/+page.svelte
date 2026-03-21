@@ -558,6 +558,9 @@ docker compose -f deploy/docker-compose.node-hardened.yml up -d
 									{node.reputation.score}
 								</span>
 							{/if}
+							{#if node.version_match === false}
+								<span class="node-badge outdated mono" title="Node version differs from server — update recommended">OUTDATED</span>
+							{/if}
 							{#if node.paused}
 								<span class="node-badge paused mono">PAUSED</span>
 							{:else if node.schedule.enabled && !node.schedule.is_active_now}
@@ -1114,6 +1117,12 @@ docker compose -f deploy/docker-compose.node-hardened.yml up -d
 
 	.node-badge.scheduled {
 		color: var(--secondary);
+	}
+
+	.node-badge.outdated {
+		color: var(--state-raw);
+		border-color: rgba(240, 160, 48, 0.3);
+		background: rgba(240, 160, 48, 0.08);
 	}
 
 	.node-actions {

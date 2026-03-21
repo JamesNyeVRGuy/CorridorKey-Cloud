@@ -87,6 +87,7 @@ class NodeInfo:
     schedule: NodeSchedule = field(default_factory=NodeSchedule)
     # Empty list = accept all job types. Non-empty = only these types.
     accepted_types: list[str] = field(default_factory=list)
+    agent_version: str = ""  # reported by node on registration
     cpu_stats: dict = field(default_factory=dict)  # {cpu_percent, cpu_count, ram_*}
     health_history: list[dict] = field(default_factory=list, repr=False)  # last N snapshots
     recent_logs: list[str] = field(default_factory=list, repr=False)
@@ -155,6 +156,7 @@ class NodeInfo:
             "schedule": self.schedule.to_dict(),
             "accepted_types": self.accepted_types,
             "cpu_stats": self.cpu_stats,
+            "agent_version": self.agent_version,
         }
 
 

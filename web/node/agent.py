@@ -27,6 +27,20 @@ from .weight_sync import sync_weights
 logger = logging.getLogger(__name__)
 
 
+def _get_local_version() -> str:
+    """Detect version from git at runtime (dev mode)."""
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip() if result.returncode == 0 else "unknown"
+    except Exception:
+        return "unknown"
+
+
 class NodeAgent:
     """Lightweight agent that connects to the main CorridorKey server."""
 
@@ -123,7 +137,7 @@ class NodeAgent:
                 "hardened": os.environ.get("CK_NODE_HARDENED", "").strip().lower() in ("true", "1"),
                 "uid": os.getuid(),
                 "read_only_fs": not os.access("/", os.W_OK),
-                "agent_version": "1.0.0",
+                "agent_version": os.environ.get("CK_BUILD_COMMIT", "").strip() or _get_local_version(),
             },
         }
 
@@ -135,6 +149,13 @@ class NodeAgent:
             # Log any security warnings from the server
             for w in data.get("security_warnings", []):
                 logger.warning(f"Server security warning: {w}")
+            # Version mismatch warning
+            if not data.get("version_match", True):
+                server_v = data.get("server_version", "unknown")
+                logger.warning(
+                    f"Version mismatch — node: {payload['security']['agent_version']}, "
+                    f"server: {server_v}. Consider updating the node."
+                )
             return True
         except Exception as e:
             logger.error(f"Registration failed: {e}")

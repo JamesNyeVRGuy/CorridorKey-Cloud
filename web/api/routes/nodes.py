@@ -211,6 +211,7 @@ def register_node(req: NodeRegisterRequest, request: Request):
         shared_storage=req.shared_storage,
         org_id=org_id,
         accepted_types=req.accepted_types,
+        agent_version=req.security.agent_version,
     )
     registry.register(info)
     # Associate the per-node token with this node_id
@@ -223,10 +224,26 @@ def register_node(req: NodeRegisterRequest, request: Request):
     if node:
         _restore_node_config(node)
         manager.send_node_update(node.to_dict(), org_id=node.org_id)
+    # Version comparison — tell the node if it's outdated
+    from ..version import VERSION_STRING
+
+    version_ok = True
+    server_version = VERSION_STRING
+    if req.security.agent_version and req.security.agent_version != VERSION_STRING:
+        # Different version — check if node is behind
+        version_ok = False
+        if req.security.agent_version:
+            logger.info(
+                f"Node {req.name} version {req.security.agent_version} "
+                f"differs from server {VERSION_STRING}"
+            )
+
     return {
         "status": "registered",
         "node_id": req.node_id,
         "security_warnings": security_warnings,
+        "server_version": server_version,
+        "version_match": version_ok,
     }
 
 
