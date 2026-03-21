@@ -323,12 +323,17 @@ def get_node_setup_info(request: Request):
     Returns the server URL and image tag. The actual auth token
     is generated separately via POST /tokens.
     """
+    # Detect the server's external URL from the request
+    forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    forwarded_host = request.headers.get("x-forwarded-host", request.url.netloc)
+    main_url = f"{forwarded_proto}://{forwarded_host}"
+
     return {
-        "main_url": request.url.scheme + "://" + request.url.netloc,
-        "image": "ghcr.io/jamesnyevrguy/corridorkey-node:stable",
-        "compose_template": "docker-compose.node.yml",
+        "main_url": main_url,
+        "image": "ghcr.io/jamesnyevrguy/corridorkey-node:cloud",
+        "compose_template": "docker-compose.node-hardened.yml",
         "env_vars": {
-            "CK_MAIN_URL": {"required": True, "desc": "Main server URL"},
+            "CK_MAIN_URL": {"required": True, "desc": "Main server URL", "default": main_url},
             "CK_AUTH_TOKEN": {"required": True, "desc": "Node auth token (generate above)"},
             "CK_NODE_NAME": {"required": False, "desc": "Display name for this node"},
             "CK_NODE_GPUS": {"required": False, "desc": "'auto', '0', or '0,1'"},

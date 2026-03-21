@@ -41,7 +41,7 @@ Everything lives in a single `.env` file. Key rules:
 | `CK_JWT_SECRET` | Same as JWT_SECRET (CK reads this name) |
 | `CK_AUTH_ENABLED` | `true` to enable login/auth |
 | `CK_GOTRUE_INTERNAL_URL` | `http://supabase-auth:9999` (Docker internal) |
-| `CK_DATABASE_URL` | `postgresql://postgres:<pw>@supabase-db:5432/corridorkey` |
+| `CK_DATABASE_URL` | `postgresql://supabase_admin:<pw>@supabase-db:5432/corridorkey` |
 | `CK_MIGRATION_URL` | `postgresql://supabase_admin:<pw>@supabase-db:5432/corridorkey` |
 | `SERVICE_ROLE_KEY` | Supabase admin API key (for create-admin.sh) |
 

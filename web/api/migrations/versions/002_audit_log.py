@@ -31,8 +31,14 @@ def upgrade() -> None:
     op.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON ck.audit_log (timestamp DESC)")
     op.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON ck.audit_log (actor_user_id)")
     op.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_action ON ck.audit_log (action)")
-    op.execute("GRANT ALL ON TABLE ck.audit_log TO postgres")
-    op.execute("GRANT USAGE, SELECT ON SEQUENCE ck.audit_log_id_seq TO postgres")
+    op.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'postgres') THEN
+                EXECUTE 'GRANT ALL ON TABLE ck.audit_log TO postgres';
+                EXECUTE 'GRANT USAGE, SELECT ON SEQUENCE ck.audit_log_id_seq TO postgres';
+            END IF;
+        END $$
+    """)
 
 
 def downgrade() -> None:

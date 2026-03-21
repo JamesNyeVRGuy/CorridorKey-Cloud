@@ -27,7 +27,13 @@ def upgrade() -> None:
             updated_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
-    op.execute("GRANT ALL ON TABLE ck.gpu_credits TO postgres")
+    op.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'postgres') THEN
+                EXECUTE 'GRANT ALL ON TABLE ck.gpu_credits TO postgres';
+            END IF;
+        END $$
+    """)
 
 
 def downgrade() -> None:
@@ -40,4 +46,10 @@ def downgrade() -> None:
             updated_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
-    op.execute("GRANT ALL ON TABLE ck.gpu_credits TO postgres")
+    op.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'postgres') THEN
+                EXECUTE 'GRANT ALL ON TABLE ck.gpu_credits TO postgres';
+            END IF;
+        END $$
+    """)

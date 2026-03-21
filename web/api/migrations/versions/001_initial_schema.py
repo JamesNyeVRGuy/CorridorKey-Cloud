@@ -48,11 +48,16 @@ def upgrade() -> None:
             updated_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
-    # Ensure permissions for the postgres role
-    op.execute("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA ck TO postgres")
-    op.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ck TO postgres")
-    # Alembic version table lives in ck schema too
-    op.execute("GRANT ALL ON TABLE ck.alembic_version TO postgres")
+    # Ensure permissions — grant to postgres if it exists (Supabase uses supabase_admin)
+    op.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'postgres') THEN
+                EXECUTE 'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA ck TO postgres';
+                EXECUTE 'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ck TO postgres';
+                EXECUTE 'GRANT ALL ON TABLE ck.alembic_version TO postgres';
+            END IF;
+        END $$
+    """)
 
 
 def downgrade() -> None:
