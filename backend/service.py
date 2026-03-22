@@ -880,8 +880,10 @@ class CorridorKeyService:
         # Refresh alpha asset
         clip.alpha_asset = ClipAsset(alpha_dir, "sequence")
 
-        if on_progress:
-            on_progress(clip.name, 1, 1)
+        # Report final progress with actual frame count
+        if on_progress and clip.alpha_asset:
+            fc = clip.alpha_asset.frame_count
+            on_progress(clip.name, fc, fc)
 
         # Transition RAW → READY
         try:
@@ -919,8 +921,15 @@ class CorridorKeyService:
 
     def _run_gvm_single(self, gvm, clip, input_path, alpha_dir, job, on_progress, on_warning):
         """Run GVM on all frames sequentially (batch=1, one frame at a time)."""
+        # Count frames to report accurate progress
+        if os.path.isdir(input_path):
+            from .project import is_image_file
+
+            frame_count = len([f for f in os.listdir(input_path) if is_image_file(f)])
+        else:
+            frame_count = 0
         if on_progress:
-            on_progress(clip.name, 0, 1)
+            on_progress(clip.name, 0, frame_count)
 
         if job and job.is_cancelled:
             raise JobCancelledError(clip.name, 0)

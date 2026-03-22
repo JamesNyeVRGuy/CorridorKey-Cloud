@@ -378,15 +378,29 @@ def set_accepted_types(node_id: str, req: AcceptedTypesRequest):
 def get_next_job(node_id: str):
     """Get the next available job for a node to process.
 
-    The main machine assigns jobs from its queue to requesting nodes.
-    Returns null if no jobs are available.
+    Uses reputation-weighted dispatch: low-reputation nodes are delayed
+    slightly so higher-reputation nodes claim jobs first. This naturally
+    routes work to faster, more reliable nodes without a complex scheduler.
     """
+    import time as _time
+
     node = registry.get_node(node_id)
     if not node or not node.is_alive:
         raise HTTPException(status_code=404, detail="Node not registered or offline")
 
     if not node.can_accept_jobs:
         return {"job": None, "reason": "paused" if node.paused else "outside_schedule"}
+
+    # Reputation-weighted delay: high-rep nodes claim immediately,
+    # low-rep nodes wait up to 1 second. Score 100 = 0s, score 0 = 1s.
+    from ..node_reputation import get_reputation
+
+    rep = get_reputation(node_id)
+    if rep.completed_jobs + rep.failed_jobs >= 3:
+        # Only apply delay after enough history to judge
+        delay = max(0.0, (100 - rep.score) / 100.0)  # 0-1 second
+        if delay > 0.05:
+            _time.sleep(delay)
 
     queue = get_queue()
     # Org isolation (CRKY-19): private nodes only claim jobs from their org.

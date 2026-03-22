@@ -307,7 +307,7 @@ class NodeAgent:
         if job_type == "inference":
             passes = [("input", fr), ("alpha", fr)]
         elif job_type == "gvm_alpha":
-            passes = [("input", None)]
+            passes = [("input", fr)]
         elif job_type == "videomama_alpha":
             passes = [("input", None), ("mask", None)]
 
