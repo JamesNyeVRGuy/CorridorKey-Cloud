@@ -13,6 +13,8 @@
 	let weights = $state<Record<string, WeightInfo>>({});
 	let weightsLoading = $state(true);
 	let vramLimit = $state(0);
+	let gvmConcurrency = $state(1);
+	let gvmBatchSize = $state(1);
 	let vramLimitSaving = $state(false);
 
 	const weightLabels: Record<string, { name: string; desc: string }> = {
@@ -80,12 +82,44 @@
 		}
 	}
 
+	async function loadGvmSettings() {
+		try {
+			const token = localStorage.getItem('ck:auth_token');
+			const headers: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {};
+			const [conc, batch] = await Promise.all([
+				fetch('/api/system/gvm-concurrency', { headers }).then(r => r.json()),
+				fetch('/api/system/gvm-batch-size', { headers }).then(r => r.json()),
+			]);
+			gvmConcurrency = conc.concurrency ?? 1;
+			gvmBatchSize = batch.batch_size ?? 1;
+		} catch { /* ignore */ }
+	}
+
+	async function saveGvmConcurrency() {
+		try {
+			const token = localStorage.getItem('ck:auth_token');
+			await fetch(`/api/system/gvm-concurrency?concurrency=${gvmConcurrency}`, {
+				method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
+			});
+		} catch (e) { toast.error(String(e)); }
+	}
+
+	async function saveGvmBatchSize() {
+		try {
+			const token = localStorage.getItem('ck:auth_token');
+			await fetch(`/api/system/gvm-batch-size?batch_size=${gvmBatchSize}`, {
+				method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
+			});
+		} catch (e) { toast.error(String(e)); }
+	}
+
 	onMount(() => {
 		const user = getStoredUser();
 		isAdmin = user?.tier === 'platform_admin';
 		if (isAdmin) {
 			loadWeights();
 			loadVramLimit();
+			loadGvmSettings();
 		}
 	});
 </script>
@@ -193,6 +227,34 @@
 			<button class="btn btn-secondary" onclick={handleUnload} disabled={unloading}>
 				{unloading ? 'Unloading...' : 'Unload All Models'}
 			</button>
+		</section>
+
+		<section class="settings-card">
+			<h2 class="card-title mono">GVM ALPHA GENERATION</h2>
+
+			<div class="setting-row">
+				<div class="setting-info">
+					<span class="setting-label">Parallel Chunks (Intra-Node)</span>
+					<span class="setting-hint">Process multiple frame chunks simultaneously on the same GPU. Higher = faster but uses more VRAM.</span>
+				</div>
+				<div class="vram-limit-control">
+					<input type="range" min="1" max="8" step="1" bind:value={gvmConcurrency} onchange={saveGvmConcurrency} class="limit-slider" />
+					<span class="limit-val mono">{gvmConcurrency}x</span>
+				</div>
+			</div>
+
+			<div class="setting-row">
+				<div class="setting-info">
+					<span class="setting-label">Default Batch Size</span>
+					<span class="setting-hint">1 = per-frame (fast, shardable). 8 = temporal coherence (less flicker, more VRAM). Must be even if &gt; 1.</span>
+				</div>
+				<select class="tier-select mono" bind:value={gvmBatchSize} onchange={saveGvmBatchSize}>
+					<option value={1}>1 (Speed)</option>
+					<option value={2}>2</option>
+					<option value={4}>4</option>
+					<option value={8}>8 (Quality)</option>
+				</select>
+			</div>
 		</section>
 		{/if}
 
