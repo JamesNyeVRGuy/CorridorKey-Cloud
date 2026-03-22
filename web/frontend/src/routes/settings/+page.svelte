@@ -195,6 +195,19 @@
 			</button>
 		</section>
 		{/if}
+
+		<section class="settings-card">
+			<h2 class="card-title mono">HELP</h2>
+			<div class="setting-row">
+				<div class="setting-info">
+					<span class="setting-label">Welcome Guide</span>
+					<span class="setting-hint">Show the pipeline walkthrough again.</span>
+				</div>
+				<button class="btn btn-secondary" onclick={() => { localStorage.removeItem('ck:welcome_dismissed'); window.location.reload(); }}>
+					Show Guide
+				</button>
+			</div>
+		</section>
 	</div>
 </div>
 

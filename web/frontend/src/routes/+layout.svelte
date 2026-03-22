@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { connect, disconnect, onMessage, isConnected } from '$lib/ws';
+	import WelcomeCard from '../components/WelcomeCard.svelte';
 	import { refreshClips } from '$lib/stores/clips';
 	import { refreshJobs, updateJobFromWS, currentJob, runningJobs, activeJobCount } from '$lib/stores/jobs';
 	import { refreshDevice, refreshVRAM, device, vram, wsConnected } from '$lib/stores/system';
@@ -267,6 +268,9 @@
 </div>
 {/if}
 
+{#if authChecked && !isPublicPage}
+	<WelcomeCard />
+{/if}
 <ToastContainer />
 <KeyboardHelp />
 
