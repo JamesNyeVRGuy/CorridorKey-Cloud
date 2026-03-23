@@ -12,9 +12,12 @@ in nodes.py which use CK_AUTH_TOKEN.
 from __future__ import annotations
 
 import logging
+import os
+import re
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from ..auth import AUTH_ENABLED, UserContext, get_current_user
 from ..database import get_storage
@@ -84,6 +87,15 @@ def _save_node_config(node_id: str, node: NodeInfo) -> None:
         "accepted_types": node.accepted_types,
     }
     storage.set_setting("node_configs", configs)
+
+
+def _broadcast_node_update(node: NodeInfo) -> None:
+    """Broadcast a node update via WebSocket with redacted data for non-admin members.
+
+    Shared nodes broadcast with org_id=None so all authenticated users get the update.
+    """
+    broadcast_org = node.org_id if node.visibility != "shared" else None
+    manager.send_node_update(node.to_safe_dict(), org_id=broadcast_org)
 
 
 # --- Listing ---
@@ -171,6 +183,13 @@ class NodeScheduleRequest(BaseModel):
     start: str = "00:00"
     end: str = "23:59"
 
+    @field_validator("start", "end")
+    @classmethod
+    def validate_time(cls, v: str) -> str:
+        if not re.match(r"^[0-2]\d:[0-5]\d$", v):
+            raise ValueError("Must be HH:MM format (00:00-23:59)")
+        return v
+
 
 class AcceptedTypesRequest(BaseModel):
     accepted_types: list[str] = []
@@ -182,7 +201,7 @@ def pause_node(node_id: str, request: Request):
     node = _require_node_access(request, node_id, manage=True)
     node.paused = True
     _save_node_config(node_id, node)
-    manager.send_node_update(node.to_dict(), org_id=node.org_id)
+    _broadcast_node_update(node)
     return {"status": "paused"}
 
 
@@ -192,7 +211,7 @@ def resume_node(node_id: str, request: Request):
     node = _require_node_access(request, node_id, manage=True)
     node.paused = False
     _save_node_config(node_id, node)
-    manager.send_node_update(node.to_dict(), org_id=node.org_id)
+    _broadcast_node_update(node)
     return {"status": "resumed"}
 
 
@@ -208,7 +227,7 @@ def set_node_schedule(node_id: str, req: NodeScheduleRequest, request: Request):
     node = _require_node_access(request, node_id, manage=True)
     node.schedule = NodeSchedule(enabled=req.enabled, start=req.start, end=req.end)
     _save_node_config(node_id, node)
-    manager.send_node_update(node.to_dict(), org_id=node.org_id)
+    _broadcast_node_update(node)
     return node.schedule.to_dict()
 
 
@@ -218,12 +237,12 @@ def set_accepted_types(node_id: str, req: AcceptedTypesRequest, request: Request
     node = _require_node_access(request, node_id, manage=True)
     node.accepted_types = req.accepted_types
     _save_node_config(node_id, node)
-    manager.send_node_update(node.to_dict(), org_id=node.org_id)
+    _broadcast_node_update(node)
     return {"accepted_types": node.accepted_types}
 
 
 class SetVisibilityRequest(BaseModel):
-    visibility: str  # "private" or "shared"
+    visibility: Literal["private", "shared"]
 
 
 @router.put("/{node_id}/visibility")
@@ -233,12 +252,10 @@ def set_node_visibility(node_id: str, req: SetVisibilityRequest, request: Reques
     Requires org admin. Shared nodes are visible and usable by all
     authenticated users, not just the owning org.
     """
-    if req.visibility not in ("private", "shared"):
-        raise HTTPException(status_code=400, detail="Visibility must be 'private' or 'shared'")
     node = _require_node_access(request, node_id, manage=True)
     node.visibility = req.visibility
     _save_node_config(node_id, node)
-    manager.send_node_update(node.to_dict(), org_id=node.org_id)
+    _broadcast_node_update(node)
     return {"visibility": node.visibility}
 
 
@@ -318,12 +335,13 @@ def revoke_node_token(token_preview: str, request: Request):
     if not target:
         raise HTTPException(status_code=404, detail="Token not found")
     # Check permission: org admin, platform admin, or personal org owner
+    # Return 404 (not 403) to prevent cross-org token enumeration
     if not user.is_admin:
         org_store = get_org_store()
         org = org_store.get_org(target.org_id)
         is_personal_owner = org and org.personal and org.owner_id == user.user_id
         if not org_store.is_org_admin(target.org_id, user.user_id) and not is_personal_owner:
-            raise HTTPException(status_code=403, detail="Only org admins can revoke tokens")
+            raise HTTPException(status_code=404, detail="Token not found")
     token_store.revoke(target.token)
     return {"status": "revoked"}
 
@@ -335,10 +353,14 @@ def get_node_setup_info(request: Request):
     Returns the server URL and image tag. The actual auth token
     is generated separately via POST /tokens.
     """
-    # Detect the server's external URL from the request
-    forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
-    forwarded_host = request.headers.get("x-forwarded-host", request.url.netloc)
-    main_url = f"{forwarded_proto}://{forwarded_host}"
+    # Use configured public URL if set, otherwise detect from request headers
+    public_url = os.environ.get("CK_PUBLIC_URL", "").strip()
+    if public_url:
+        main_url = public_url.rstrip("/")
+    else:
+        forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+        forwarded_host = request.headers.get("x-forwarded-host", request.url.netloc)
+        main_url = f"{forwarded_proto}://{forwarded_host}"
 
     return {
         "main_url": main_url,

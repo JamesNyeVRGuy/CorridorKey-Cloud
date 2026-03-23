@@ -112,6 +112,7 @@ def _save_node_config(node_id: str, node: NodeInfo) -> None:
     configs = storage.get_setting("node_configs", {})
     configs[node_id] = {
         "paused": node.paused,
+        "visibility": node.visibility,
         "schedule": node.schedule.to_dict(),
         "accepted_types": node.accepted_types,
     }

@@ -160,6 +160,30 @@ class NodeInfo:
             "agent_version": self.agent_version,
         }
 
+    def to_safe_dict(self) -> dict:
+        """Redacted version for WebSocket broadcasts to non-admin org members."""
+        return {
+            "node_id": self.node_id,
+            "name": self.name,
+            "host": "***",
+            "gpus": [g.to_dict() for g in self.gpus],
+            "gpu_name": self.gpu_name,
+            "vram_total_gb": round(self.vram_total_gb, 1),
+            "vram_free_gb": round(self.vram_free_gb, 1),
+            "status": self.status if self.is_alive else "offline",
+            "current_job_id": self.current_job_id,
+            "last_heartbeat": self.last_heartbeat,
+            "capabilities": [],
+            "shared_storage": None,
+            "org_id": self.org_id,
+            "visibility": self.visibility,
+            "paused": self.paused,
+            "schedule": self.schedule.to_dict(),
+            "accepted_types": [],
+            "cpu_stats": {},
+            "agent_version": self.agent_version,
+        }
+
 
 class NodeRegistry:
     """Thread-safe registry of remote worker nodes."""
