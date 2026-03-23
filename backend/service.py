@@ -354,7 +354,9 @@ class CorridorKeyService:
         if self._videomama_pipeline is not None:
             return self._videomama_pipeline
 
-        sys.path.insert(0, os.path.join(BASE_DIR, "VideoMaMaInferenceModule"))
+        _vm_path = os.path.join(BASE_DIR, "VideoMaMaInferenceModule")
+        if _vm_path not in sys.path:
+            sys.path.insert(0, _vm_path)
 
         # Auto-download VideoMaMa weights from HuggingFace if missing
         vm_weights = os.path.join(BASE_DIR, "VideoMaMaInferenceModule", "checkpoints", "VideoMaMa")
@@ -453,8 +455,16 @@ class CorridorKeyService:
             ret, frame = alpha_cap.read()
             if not ret:
                 return None
-            return frame[:, :, 2].astype(np.float32) / 255.0
+            if frame.ndim == 2:
+                return frame.astype(np.float32) / 255.0
+            return frame[:, :, min(2, frame.shape[2] - 1)].astype(np.float32) / 255.0
         else:
+            if frame_index >= len(alpha_files):
+                logger.warning(
+                    f"Clip '{clip.name}': alpha frame_index {frame_index} out of range "
+                    f"(have {len(alpha_files)} alpha frames)"
+                )
+                return None
             fpath = os.path.join(clip.alpha_asset.path, alpha_files[frame_index])
             mask = read_mask_frame(fpath, clip.name, frame_index)
             validate_frame_read(mask, clip.name, frame_index, fpath)
@@ -513,6 +523,11 @@ class CorridorKeyService:
             os.replace(tmp_path, manifest_path)
         except Exception as e:
             logger.warning(f"Failed to write manifest: {e}")
+            # Clean up orphaned temp file
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     def _write_outputs(
         self,
@@ -1080,7 +1095,9 @@ class CorridorKeyService:
             )
 
         # ── Phase 4: Inference (per-chunk) ──
-        sys.path.insert(0, os.path.join(BASE_DIR, "VideoMaMaInferenceModule"))
+        _vm_path = os.path.join(BASE_DIR, "VideoMaMaInferenceModule")
+        if _vm_path not in sys.path:
+            sys.path.insert(0, _vm_path)
         from VideoMaMaInferenceModule.inference import run_inference
 
         total_chunks = (num_frames + chunk_size - 1) // chunk_size
