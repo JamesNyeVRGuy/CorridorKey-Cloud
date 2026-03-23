@@ -1,14 +1,18 @@
 /** Typed fetch wrappers for the CorridorKey API. */
 
-import { getToken, refreshToken, logout } from '$lib/auth';
+import { getToken, refreshToken, logout, getActiveOrgId } from '$lib/auth';
 
 const BASE = '';
 
-/** Attach auth header to a Headers/Record object. */
+/** Attach auth + org headers to a request. */
 async function attachAuth(headers: Record<string, string>): Promise<void> {
 	const token = await getToken();
 	if (token) {
 		headers['Authorization'] = `Bearer ${token}`;
+	}
+	const orgId = getActiveOrgId();
+	if (orgId) {
+		headers['X-Org-Id'] = orgId;
 	}
 }
 

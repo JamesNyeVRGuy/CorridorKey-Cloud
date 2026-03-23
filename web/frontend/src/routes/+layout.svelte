@@ -14,6 +14,7 @@
 	import { toast } from '$lib/stores/toasts';
 	import { goto } from '$app/navigation';
 	import { logout, getStoredUser, initAuth } from '$lib/auth';
+	import { userOrgs, activeOrgId, switchOrg, loadUserOrgs, type OrgSummary } from '$lib/stores/orgs';
 
 	let { children } = $props();
 	let authChecked = $state(false);
@@ -48,9 +49,11 @@
 	async function refreshCredits() {
 		try {
 			const token = localStorage.getItem('ck:auth_token');
-			const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-			const orgsRes = await fetch('/api/orgs', { headers }).then(r => r.json());
-			const orgId = orgsRes.orgs?.[0]?.org_id;
+			const headers: Record<string, string> = {};
+			if (token) headers['Authorization'] = `Bearer ${token}`;
+			// Use active org (from store or localStorage), not hardcoded first org
+			const { getActiveOrgId: getOrg } = await import('$lib/auth');
+			const orgId = getOrg();
 			if (orgId) {
 				const credits = await fetch(`/api/orgs/${orgId}/credits`, { headers }).then(r => r.json());
 				const hrs = (credits.balance_seconds / 3600).toFixed(1);
@@ -62,6 +65,14 @@
 	function handleLogout() {
 		logout();
 		window.location.href = '/login';
+	}
+
+	function handleOrgSwitch(orgId: string) {
+		switchOrg(orgId);
+		// Refresh all data-dependent stores for the new org context
+		refreshClips();
+		refreshJobs();
+		if (authEnabled) refreshCredits();
 	}
 
 	onMount(async () => {
@@ -108,6 +119,7 @@
 		refreshClips();
 		refreshJobs();
 		refreshNodes();
+		if (authEnabled) loadUserOrgs();
 
 		// Load credit balance for sidebar (CRKY-6)
 		if (authEnabled) refreshCredits();
@@ -178,6 +190,23 @@
 				<img src="/Corridor_Digital_Logo.svg" alt="Corridor Digital" class="logo-img" />
 				<span class="logo-product mono">CORRIDORKEY</span>
 			</a>
+
+			{#if authEnabled && $userOrgs.length > 1}
+				<div class="org-switcher">
+					<select
+						class="org-select mono"
+						value={$activeOrgId}
+						onchange={(e) => handleOrgSwitch((e.target as HTMLSelectElement).value)}
+						aria-label="Switch workspace"
+					>
+						{#each $userOrgs as org (org.org_id)}
+							<option value={org.org_id}>{org.name}</option>
+						{/each}
+					</select>
+				</div>
+			{:else if authEnabled && $userOrgs.length === 1}
+				<div class="org-label mono">{$userOrgs[0]?.name}</div>
+			{/if}
 
 			<div class="nav-links">
 				{#each navItems as item}
@@ -327,6 +356,38 @@
 		width: 150px;
 		height: auto;
 		filter: drop-shadow(0 0 4px rgba(255, 242, 3, 0.15));
+	}
+
+	.org-switcher {
+		padding: var(--sp-2) var(--sp-4);
+		border-bottom: 1px solid var(--border);
+	}
+
+	.org-select {
+		width: 100%;
+		background: var(--surface-3);
+		color: var(--text-primary);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		padding: 5px 8px;
+		font-size: 11px;
+		cursor: pointer;
+		appearance: auto;
+	}
+
+	.org-select:focus-visible {
+		outline: 1.5px solid var(--accent);
+		outline-offset: 1px;
+	}
+
+	.org-label {
+		padding: 6px var(--sp-4);
+		font-size: 11px;
+		color: var(--text-secondary);
+		border-bottom: 1px solid var(--border);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.logo-product {

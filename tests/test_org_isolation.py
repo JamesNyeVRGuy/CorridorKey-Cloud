@@ -30,6 +30,7 @@ def setup_isolation(tmp_path):
 def _make_request(user: UserContext | None = None) -> MagicMock:
     request = MagicMock()
     request.state.user = user
+    request.headers = {}  # Real dict so .get() works correctly
     return request
 
 

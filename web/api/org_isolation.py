@@ -53,6 +53,10 @@ def resolve_clips_dir(request: Request, org_id: str | None = None) -> str:
 
     store = get_org_store()
 
+    # Accept org_id from: explicit param > X-Org-Id header > default (personal org)
+    if not org_id:
+        org_id = request.headers.get("X-Org-Id", "").strip() or None
+
     if org_id:
         # Validate user is a member of the requested org
         if not user.is_admin and not store.is_member(org_id, user.user_id):

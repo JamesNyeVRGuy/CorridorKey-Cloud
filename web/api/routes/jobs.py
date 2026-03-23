@@ -41,11 +41,16 @@ def _stamp_job(job: GPUJob, request: Request | None) -> GPUJob:
     user = get_current_user(request)
     if user:
         job.submitted_by = user.user_id
-        # Look up org from org store (JWT org_ids may be empty)
+        # Use active org from X-Org-Id header, fall back to first org
         from ..orgs import get_org_store
 
-        user_orgs = get_org_store().list_user_orgs(user.user_id)
-        job.org_id = user_orgs[0].org_id if user_orgs else None
+        active_org = request.headers.get("X-Org-Id", "").strip()
+        store = get_org_store()
+        if active_org and (user.is_admin or store.is_member(active_org, user.user_id)):
+            job.org_id = active_org
+        else:
+            user_orgs = store.list_user_orgs(user.user_id)
+            job.org_id = user_orgs[0].org_id if user_orgs else None
     return job
 
 

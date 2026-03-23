@@ -8,6 +8,7 @@
 const TOKEN_KEY = 'ck:auth_token';
 const REFRESH_KEY = 'ck:refresh_token';
 const USER_KEY = 'ck:auth_user';
+const ORG_KEY = 'ck:active_org';
 export interface AuthUser {
 	id: string;
 	email: string;
@@ -110,9 +111,20 @@ export function getStoredUser(): AuthUser | null {
 	}
 }
 
-/** Logout — clear stored tokens and GoTrue URL. */
+/** Logout — clear stored tokens, active org, and GoTrue URL. */
 export function logout(): void {
 	clearSession();
+	localStorage.removeItem(ORG_KEY);
+}
+
+/** Get the active org_id. Falls back to first org from stored user. */
+export function getActiveOrgId(): string | null {
+	return localStorage.getItem(ORG_KEY) || getStoredUser()?.org_ids?.[0] || null;
+}
+
+/** Set the active org_id. */
+export function setActiveOrgId(orgId: string): void {
+	localStorage.setItem(ORG_KEY, orgId);
 }
 
 /** Check if a session exists (not necessarily valid). */
