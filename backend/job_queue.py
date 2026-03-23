@@ -119,11 +119,19 @@ class GPUJobQueue:
         simultaneously. All running jobs are tracked and visible in the API.
     """
 
+    _MAX_HISTORY = 1000  # Cap history to prevent unbounded memory growth
+
     def __init__(self):
         self._queue: deque[GPUJob] = deque()
         self._lock = threading.Lock()
         self._running_jobs: list[GPUJob] = []
         self._history: list[GPUJob] = []  # completed/cancelled/failed jobs for UI display
+
+    def _add_to_history(self, job: GPUJob) -> None:
+        """Append a job to history, evicting oldest if over capacity. Must hold _lock."""
+        self._history.append(job)
+        if len(self._history) > self._MAX_HISTORY:
+            self._history = self._history[-self._MAX_HISTORY:]
 
         # Callbacks (set by UI or CLI)
         self.on_progress: ProgressCallback | None = None
@@ -245,7 +253,8 @@ class GPUJobQueue:
             if job in self._queue:
                 self._queue.remove(job)
             job.status = JobStatus.RUNNING
-            self._running_jobs.append(job)
+            if job not in self._running_jobs:
+                self._running_jobs.append(job)
             logger.info(f"Job started [{job.id}]: {job.job_type.value} for '{job.clip_name}'")
 
     def complete_job(self, job: GPUJob) -> None:
@@ -257,7 +266,7 @@ class GPUJobQueue:
             job.completed_at = time.time()
             if job in self._running_jobs:
                 self._running_jobs.remove(job)
-            self._history.append(job)
+            self._add_to_history(job)
             logger.info(f"Job completed [{job.id}]: {job.job_type.value} for '{job.clip_name}'")
         # Emit AFTER lock release (Codex: no deadlock risk)
         if self.on_completion:
@@ -270,7 +279,7 @@ class GPUJobQueue:
             job.error_message = error
             if job in self._running_jobs:
                 self._running_jobs.remove(job)
-            self._history.append(job)
+            self._add_to_history(job)
             logger.error(f"Job failed [{job.id}]: {job.job_type.value} for '{job.clip_name}': {error}")
         # Emit AFTER lock release
         if self.on_error:
@@ -306,7 +315,7 @@ class GPUJobQueue:
             job.status = JobStatus.CANCELLED
             if job in self._running_jobs:
                 self._running_jobs.remove(job)
-            self._history.append(job)
+            self._add_to_history(job)
             logger.info(f"Job cancelled [{job.id}]: {job.job_type.value} for '{job.clip_name}'")
 
     def cancel_job(self, job: GPUJob) -> None:
@@ -316,7 +325,7 @@ class GPUJobQueue:
                 if job in self._queue:
                     self._queue.remove(job)
                 job.status = JobStatus.CANCELLED
-                self._history.append(job)
+                self._add_to_history(job)
                 logger.info(f"Job removed from queue [{job.id}]: {job.job_type.value} for '{job.clip_name}'")
             elif job.status == JobStatus.RUNNING:
                 # Signal cancel — worker calls mark_cancelled() after catching JobCancelledError
@@ -340,7 +349,7 @@ class GPUJobQueue:
             # Clear queue — preserve in history
             for job in self._queue:
                 job.status = JobStatus.CANCELLED
-                self._history.append(job)
+                self._add_to_history(job)
             self._queue.clear()
             logger.info("All jobs cancelled")
 
@@ -415,7 +424,7 @@ class GPUJobQueue:
             for job in to_remove:
                 self._queue.remove(job)
                 job.status = JobStatus.CANCELLED
-                self._history.append(job)
+                self._add_to_history(job)
                 cancelled += 1
             # Request cancel on running shards
             for job in self._running_jobs:
