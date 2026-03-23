@@ -447,6 +447,8 @@ class GPUJobQueue:
                     shard_group=old.shard_group,
                     shard_index=old.shard_index,
                     shard_total=old.shard_total,
+                    org_id=old.org_id,
+                    submitted_by=old.submitted_by,
                 )
                 new_jobs.append(job)
         # Submit outside lock

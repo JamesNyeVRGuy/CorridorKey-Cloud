@@ -84,7 +84,7 @@ class GVMJobRequest(BaseModel):
 
 class VideoMaMaJobRequest(BaseModel):
     clip_names: list[str] = Field(max_length=_MAX_CLIPS)
-    chunk_size: int = 50
+    chunk_size: int = Field(50, ge=1, le=1000)
 
 
 class JobSchema(BaseModel):

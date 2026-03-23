@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.job_queue import GPUJob, JobType
 
@@ -102,9 +102,6 @@ def estimate_job_cost(job_type: str = "inference", frame_count: int = 0, num_sha
 
     Returns estimated GPU-seconds, GPU-minutes, and wall-clock time.
     """
-    queue = get_queue()
-    history = queue.history_snapshot
-
     # Default estimates per job type (used when no history available)
     defaults = {
         "inference": 1.5,   # ~1.5s per frame on RTX 3090, ~0.5s on RTX 4090
@@ -113,6 +110,12 @@ def estimate_job_cost(job_type: str = "inference", frame_count: int = 0, num_sha
         "video_extract": 0.05,
         "video_stitch": 0.02,
     }
+
+    if job_type not in defaults:
+        raise HTTPException(status_code=400, detail=f"Unknown job type: {job_type}")
+
+    queue = get_queue()
+    history = queue.history_snapshot
 
     # Compute median seconds-per-frame from completed jobs with valid timing
     completed = [
@@ -211,11 +214,11 @@ def submit_inference(req: InferenceJobRequest, request: Request):
 
 
 class ShardedInferenceRequest(BaseModel):
-    clip_names: list[str]
+    clip_names: list[str] = Field(max_length=100)
     params: InferenceParamsSchema = InferenceParamsSchema()
     output_config: OutputConfigSchema = OutputConfigSchema()
-    num_shards: int = 0  # 0 = auto (based on available GPUs/nodes)
-    min_shard_size: int = 50  # don't shard below this frame count
+    num_shards: int = Field(0, ge=0, le=64)
+    min_shard_size: int = Field(50, ge=1)
 
 
 @router.post("/inference/sharded", response_model=list[JobSchema])
@@ -259,12 +262,13 @@ def submit_sharded_inference(req: ShardedInferenceRequest, request: Request):
 
     available_gpus = len(gpu_weights)
 
-    for clip_name in req.clip_names:
-        # Get frame count
-        from ..org_isolation import resolve_clips_dir
+    from ..org_isolation import resolve_clips_dir
 
-        clips = service.scan_clips(resolve_clips_dir(request))
-        clip = next((c for c in clips if c.name == clip_name), None)
+    clips = service.scan_clips(resolve_clips_dir(request))
+    clip_map = {c.name: c for c in clips}
+
+    for clip_name in req.clip_names:
+        clip = clip_map.get(clip_name)
         if clip is None:
             continue
 
@@ -304,7 +308,7 @@ def submit_sharded_inference(req: ShardedInferenceRequest, request: Request):
         for i in range(num_shards):
             # Spread remainder across first N shards (each gets +1 frame)
             size = base + (1 if i < remainder else 0)
-            shard_ranges.append((cursor, cursor + size))
+            shard_ranges.append((cursor, cursor + size - 1))  # inclusive end
             cursor += size
 
         for i, (start, end) in enumerate(shard_ranges):
@@ -314,7 +318,7 @@ def submit_sharded_inference(req: ShardedInferenceRequest, request: Request):
                 params={
                     "inference_params": req.params.model_dump(),
                     "output_config": req.output_config.model_dump(),
-                    "frame_range": [start, end],
+                    "frame_range": [start, end],  # inclusive range for run_inference
                 },
                 shard_group=group_id,
                 shard_index=i,
@@ -352,6 +356,7 @@ def retry_shard_group(group_id: str, request: Request):
     """Re-submit failed shards from a group. Only the submitter or platform admin."""
     queue = get_queue()
     _check_shard_group_ownership(queue, group_id, request)
+    check_credit_balance(request)
     new_jobs = queue.retry_failed_shards(group_id)
     return {
         "status": "retried",
@@ -373,24 +378,26 @@ def submit_gvm(req: GVMJobRequest, request: Request):
     service = get_service()
     submitted = []
 
+    from ..org_isolation import resolve_clips_dir
+    from ..worker import get_local_gpu_enabled
+
+    clips = service.scan_clips(resolve_clips_dir(request))
+    clip_map = {c.name: c for c in clips}
+
+    available = 0
+    if get_local_gpu_enabled():
+        available += 1
+    online_nodes = [
+        n for n in registry.list_nodes()
+        if n.can_accept_jobs and n.accepts_job_type("gvm_alpha") and n.status != "busy"
+    ]
+    available += len(online_nodes)
+
     for clip_name in req.clip_names:
-        # Check if we can shard across nodes
-        from ..org_isolation import resolve_clips_dir
-
-        clips = service.scan_clips(resolve_clips_dir(request))
-        clip = next((c for c in clips if c.name == clip_name), None)
-        frame_count = clip.input_asset.frame_count if clip and clip.input_asset else 0
-
-        from ..worker import get_local_gpu_enabled
-
-        available = 0
-        if get_local_gpu_enabled():
-            available += 1
-        online_nodes = [
-            n for n in registry.list_nodes()
-            if n.can_accept_jobs and n.accepts_job_type("gvm_alpha") and n.status != "busy"
-        ]
-        available += len(online_nodes)
+        clip = clip_map.get(clip_name)
+        if clip is None:
+            continue
+        frame_count = clip.input_asset.frame_count if clip.input_asset else 0
 
         min_shard = 20
 
@@ -533,7 +540,8 @@ def _check_job_ownership(job: GPUJob, request: Request) -> None:
         return  # Auth disabled
     if user.is_admin:
         return  # Platform admins bypass
-    if job.submitted_by and job.submitted_by != user.user_id:
+    # Deny by default — user must be the submitter
+    if not job.submitted_by or job.submitted_by != user.user_id:
         raise HTTPException(status_code=403, detail="You can only manage your own jobs")
 
 
@@ -544,14 +552,14 @@ def _check_shard_group_ownership(queue, group_id: str, request: Request) -> None
         return  # Auth disabled
     if user.is_admin:
         return
-    # Find any job in the shard group to check ownership
     all_jobs = list(queue.queue_snapshot) + queue.running_jobs + list(queue.history_snapshot)
     group_jobs = [j for j in all_jobs if j.shard_group == group_id]
     if not group_jobs:
-        raise HTTPException(status_code=404, detail=f"Shard group '{group_id}' not found")
-    # Check the submitter of the first job
-    if group_jobs[0].submitted_by and group_jobs[0].submitted_by != user.user_id:
-        raise HTTPException(status_code=403, detail="You can only manage your own shard groups")
+        raise HTTPException(status_code=404, detail="Shard group not found")
+    # Deny if ANY shard in the group belongs to another user
+    for j in group_jobs:
+        if not j.submitted_by or j.submitted_by != user.user_id:
+            raise HTTPException(status_code=403, detail="You can only manage your own shard groups")
 
 
 @router.delete("/{job_id}", summary="Cancel a job")
@@ -609,7 +617,6 @@ def get_job_log(job_id: str, request: Request):
         "error_message": job.error_message,
         "current_frame": job.current_frame,
         "total_frames": job.total_frames,
-        "params": job.params,
     }
 
 
