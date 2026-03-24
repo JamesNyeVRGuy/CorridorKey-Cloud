@@ -65,7 +65,7 @@ def _submit_jobs(jobs: list[GPUJob], request: Request) -> list[GPUJob]:
     return jobs
 
 
-def _job_to_schema(job: GPUJob) -> JobSchema:
+def _job_to_schema(job: GPUJob, is_admin: bool = False) -> JobSchema:
     # Resolve node ID to display name
     claimed = job.claimed_by
     if claimed and claimed != "local":
@@ -100,6 +100,8 @@ def _job_to_schema(job: GPUJob) -> JobSchema:
         shard_group=job.shard_group,
         shard_index=job.shard_index,
         shard_total=job.shard_total,
+        org_id=job.org_id if is_admin else None,
+        submitted_by=job.submitted_by if is_admin else None,
     )
 
 
@@ -147,14 +149,15 @@ def list_jobs(request: Request):
             return False  # Jobs without an org are hidden from non-admins
         return job.org_id in user_org_ids
 
+    admin = user.is_admin if user else False
     running = [j for j in queue.running_jobs if _visible(j)]
     queued = [j for j in queue.queue_snapshot if _visible(j)]
     history = [j for j in queue.history_snapshot if _visible(j)]
     return JobListResponse(
-        current=_job_to_schema(running[0]) if running else None,
-        running=[_job_to_schema(j) for j in running],
-        queued=[_job_to_schema(j) for j in queued],
-        history=[_job_to_schema(j) for j in history],
+        current=_job_to_schema(running[0], is_admin=admin) if running else None,
+        running=[_job_to_schema(j, is_admin=admin) for j in running],
+        queued=[_job_to_schema(j, is_admin=admin) for j in queued],
+        history=[_job_to_schema(j, is_admin=admin) for j in history],
     )
 
 

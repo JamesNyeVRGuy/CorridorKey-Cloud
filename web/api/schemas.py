@@ -104,6 +104,8 @@ class JobSchema(BaseModel):
     shard_group: str | None = None
     shard_index: int = 0
     shard_total: int = 1
+    org_id: str | None = None
+    submitted_by: str | None = None
 
 
 class JobListResponse(BaseModel):
