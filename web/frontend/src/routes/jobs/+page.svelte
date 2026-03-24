@@ -37,10 +37,20 @@
 	}
 
 	function groupShards(jobs: Job[]): (Job | ShardGroup)[] {
+		// Deduplicate by job ID (can happen when jobs move between running/history)
+		const seen = new Set<string>();
+		const deduped: Job[] = [];
+		for (const job of jobs) {
+			if (!seen.has(job.id)) {
+				seen.add(job.id);
+				deduped.push(job);
+			}
+		}
+
 		const groups = new Map<string, Job[]>();
 		const singles: Job[] = [];
 
-		for (const job of jobs) {
+		for (const job of deduped) {
 			if (job.shard_group && job.shard_total > 1) {
 				const list = groups.get(job.shard_group) ?? [];
 				list.push(job);
