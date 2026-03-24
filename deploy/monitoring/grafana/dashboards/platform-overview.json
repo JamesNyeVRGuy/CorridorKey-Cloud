@@ -1,181 +1,212 @@
 {
   "annotations": { "list": [] },
   "editable": true,
-  "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
   "links": [],
   "panels": [
     {
+      "type": "row",
+      "title": "System Health",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
       "type": "stat",
       "title": "Uptime",
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 1 },
       "targets": [{ "expr": "corridorkey_uptime_seconds", "legendFormat": "uptime" }],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "thresholds": { "steps": [{ "color": "green", "value": null }] }
-        }
-      }
+      "fieldConfig": { "defaults": { "unit": "dtdurations", "thresholds": { "steps": [{ "color": "green", "value": null }] } } }
     },
     {
       "type": "stat",
       "title": "Jobs Running",
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 1 },
       "targets": [{ "expr": "corridorkey_jobs_running", "legendFormat": "running" }],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 5 },
-              { "color": "red", "value": 10 }
-            ]
-          }
-        }
-      }
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "#EAB839", "value": 5 }, { "color": "red", "value": 15 }] } } }
     },
     {
       "type": "stat",
       "title": "Queue Depth",
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 1 },
       "targets": [{ "expr": "corridorkey_jobs_queued", "legendFormat": "queued" }],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 10 },
-              { "color": "red", "value": 50 }
-            ]
-          }
-        }
-      }
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "#EAB839", "value": 10 }, { "color": "red", "value": 50 }] } } }
     },
     {
       "type": "stat",
       "title": "Nodes Online",
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
-      "targets": [{ "expr": "corridorkey_nodes_online", "legendFormat": "online" }],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 1 }
-            ]
-          }
-        }
-      }
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 1 },
+      "targets": [{ "expr": "corridorkey_nodes_online + corridorkey_nodes_busy", "legendFormat": "alive" }],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "#EAB839", "value": 1 }, { "color": "green", "value": 2 }] } } }
+    },
+    {
+      "type": "stat",
+      "title": "Total GPUs",
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 1 },
+      "targets": [{ "expr": "corridorkey_gpus_total", "legendFormat": "gpus" }],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "blue", "value": null }] } } }
     },
     {
       "type": "stat",
       "title": "Completed/hr",
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 1 },
       "targets": [{ "expr": "corridorkey_jobs_completed_last_hour", "legendFormat": "completed" }],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": { "steps": [{ "color": "green", "value": null }] }
-        }
-      }
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }] } } }
+    },
+    {
+      "type": "stat",
+      "title": "Frames/hr",
+      "gridPos": { "h": 4, "w": 3, "x": 18, "y": 1 },
+      "targets": [{ "expr": "corridorkey_frames_processed_last_hour", "legendFormat": "frames" }],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }] } } }
     },
     {
       "type": "stat",
       "title": "Disk Free",
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "gridPos": { "h": 4, "w": 3, "x": 21, "y": 1 },
       "targets": [{ "expr": "corridorkey_disk_free_gb", "legendFormat": "free" }],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "decgbytes",
-          "thresholds": {
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 10 },
-              { "color": "green", "value": 50 }
-            ]
-          }
-        }
-      }
+      "fieldConfig": { "defaults": { "unit": "decgbytes", "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "#EAB839", "value": 10 }, { "color": "green", "value": 50 }] } } }
+    },
+    {
+      "type": "row",
+      "title": "Job Activity",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "collapsed": false
     },
     {
       "type": "timeseries",
       "title": "Job Queue Over Time",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
       "targets": [
         { "expr": "corridorkey_jobs_running", "legendFormat": "running" },
         { "expr": "corridorkey_jobs_queued", "legendFormat": "queued" }
       ],
-      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 10 } } }
-    },
-    {
-      "type": "timeseries",
-      "title": "Job Completions & Failures",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
-      "targets": [
-        { "expr": "rate(corridorkey_jobs_completed_total[5m]) * 60", "legendFormat": "completed/min" },
-        { "expr": "rate(corridorkey_jobs_failed_total[5m]) * 60", "legendFormat": "failed/min" }
-      ],
       "fieldConfig": {
-        "defaults": { "custom": { "fillOpacity": 10 } },
+        "defaults": { "custom": { "fillOpacity": 15, "lineWidth": 2, "pointSize": 3, "spanNulls": true } },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "failed/min" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+          { "matcher": { "id": "byName", "options": "running" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FFF203", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "queued" }, "properties": [{ "id": "color", "value": { "fixedColor": "#009ADA", "mode": "fixed" } }] }
         ]
       }
     },
     {
       "type": "timeseries",
-      "title": "Node Status Over Time",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "title": "Job Completions & Failures",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        { "expr": "increase(corridorkey_jobs_completed_total[5m])", "legendFormat": "completed (5m)" },
+        { "expr": "increase(corridorkey_jobs_failed_total[5m])", "legendFormat": "failed (5m)" },
+        { "expr": "increase(corridorkey_jobs_cancelled_total[5m])", "legendFormat": "cancelled (5m)" }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "bars", "stacking": { "mode": "normal" } } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "completed (5m)" }, "properties": [{ "id": "color", "value": { "fixedColor": "#5DD879", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "failed (5m)" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FF5252", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "cancelled (5m)" }, "properties": [{ "id": "color", "value": { "fixedColor": "#757575", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Frame Throughput",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        { "expr": "increase(corridorkey_frames_processed_total[5m])", "legendFormat": "frames/5m" }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 25, "lineWidth": 2, "gradientMode": "scheme" }, "color": { "mode": "fixed", "fixedColor": "#FFF203" } }
+      }
+    },
+    {
+      "type": "barchart",
+      "title": "Avg Job Duration by Type",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 14 },
+      "targets": [{ "expr": "corridorkey_job_avg_duration_seconds", "legendFormat": "{{ type }}", "format": "table", "instant": true }],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "options": { "orientation": "horizontal" }
+    },
+    {
+      "type": "barchart",
+      "title": "Avg FPS by Type",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 14 },
+      "targets": [{ "expr": "corridorkey_job_avg_fps", "legendFormat": "{{ type }}", "format": "table", "instant": true }],
+      "fieldConfig": { "defaults": { "unit": "fps" } },
+      "options": { "orientation": "horizontal" }
+    },
+    {
+      "type": "row",
+      "title": "Node Fleet",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "title": "Node Status",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
       "targets": [
         { "expr": "corridorkey_nodes_online", "legendFormat": "online" },
         { "expr": "corridorkey_nodes_busy", "legendFormat": "busy" },
-        { "expr": "corridorkey_nodes_offline", "legendFormat": "offline" }
+        { "expr": "corridorkey_nodes_offline", "legendFormat": "offline" },
+        { "expr": "corridorkey_nodes_paused", "legendFormat": "paused" }
       ],
       "fieldConfig": {
-        "defaults": { "custom": { "fillOpacity": 10 } },
+        "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2, "stacking": { "mode": "normal" } } },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "offline" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
-          { "matcher": { "id": "byName", "options": "busy" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] }
+          { "matcher": { "id": "byName", "options": "online" }, "properties": [{ "id": "color", "value": { "fixedColor": "#5DD879", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "busy" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FFF203", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "offline" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FF5252", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "paused" }, "properties": [{ "id": "color", "value": { "fixedColor": "#757575", "mode": "fixed" } }] }
         ]
       }
     },
     {
       "type": "timeseries",
       "title": "GPU Credits (per-org)",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
       "targets": [
-        { "expr": "corridorkey_gpu_credits_contributed_seconds / 3600", "legendFormat": "contributed {{ org }}" },
-        { "expr": "corridorkey_gpu_credits_consumed_seconds / 3600", "legendFormat": "consumed {{ org }}" }
+        { "expr": "corridorkey_credits_balance_hours", "legendFormat": "{{ org }} balance" }
       ],
-      "fieldConfig": { "defaults": { "unit": "h", "custom": { "fillOpacity": 5 } } }
+      "fieldConfig": {
+        "defaults": { "unit": "h", "custom": { "fillOpacity": 10, "lineWidth": 2 } },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Infrastructure",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 },
+      "collapsed": false
     },
     {
       "type": "timeseries",
       "title": "WebSocket Connections",
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 20 },
-      "targets": [
-        { "expr": "corridorkey_ws_connections", "legendFormat": "connections" }
-      ],
-      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 15 } } }
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 32 },
+      "targets": [{ "expr": "corridorkey_ws_connections", "legendFormat": "connections" }],
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2 }, "color": { "mode": "fixed", "fixedColor": "#009ADA" } } }
     },
     {
       "type": "timeseries",
-      "title": "API Requests",
-      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 20 },
-      "targets": [
-        { "expr": "rate(corridorkey_api_requests_total[5m]) * 60", "legendFormat": "req/min" }
-      ],
-      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 15 } } }
+      "title": "API Requests/min",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 32 },
+      "targets": [{ "expr": "rate(corridorkey_api_requests_total[5m]) * 60", "legendFormat": "req/min" }],
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 15, "lineWidth": 2 }, "color": { "mode": "fixed", "fixedColor": "#FFF203" } } }
     },
     {
       "type": "timeseries",
-      "title": "Disk Space",
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 20 },
+      "title": "Disk Usage",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 32 },
       "targets": [
-        { "expr": "corridorkey_disk_total_gb", "legendFormat": "total" },
+        { "expr": "corridorkey_disk_total_gb - corridorkey_disk_free_gb", "legendFormat": "used" },
         { "expr": "corridorkey_disk_free_gb", "legendFormat": "free" }
       ],
-      "fieldConfig": { "defaults": { "unit": "decgbytes", "custom": { "fillOpacity": 10 } } }
+      "fieldConfig": {
+        "defaults": { "unit": "decgbytes", "custom": { "fillOpacity": 30, "lineWidth": 1, "stacking": { "mode": "normal" } } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "used" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FF5252", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "free" }, "properties": [{ "id": "color", "value": { "fixedColor": "#5DD879", "mode": "fixed" } }] }
+        ]
+      }
     }
   ],
   "refresh": "30s",
@@ -187,5 +218,5 @@
   "timezone": "",
   "title": "CorridorKey — Platform Overview",
   "uid": "corridorkey-platform",
-  "version": 1
+  "version": 2
 }

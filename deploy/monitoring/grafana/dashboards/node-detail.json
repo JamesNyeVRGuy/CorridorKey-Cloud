@@ -1,113 +1,131 @@
 {
   "annotations": { "list": [] },
   "editable": true,
-  "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
   "links": [],
   "panels": [
     {
+      "type": "row",
+      "title": "Node Overview",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
       "type": "stat",
-      "title": "Reputation Score",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "title": "Reputation",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
       "targets": [{ "expr": "corridorkey_node_reputation{node=~\"$node\"}", "legendFormat": "{{ node }}" }],
-      "fieldConfig": {
-        "defaults": {
-          "min": 0, "max": 100,
-          "thresholds": {
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 40 },
-              { "color": "green", "value": 70 }
-            ]
-          }
-        }
-      }
+      "fieldConfig": { "defaults": { "min": 0, "max": 100, "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "#EAB839", "value": 40 }, { "color": "green", "value": 70 }] } } }
     },
     {
       "type": "stat",
       "title": "Success Rate",
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
-      "targets": [{ "expr": "corridorkey_node_success_rate{node=~\"$node\"}", "legendFormat": "{{ node }}" }],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "thresholds": {
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 0.8 },
-              { "color": "green", "value": 0.95 }
-            ]
-          }
-        }
-      }
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "targets": [{ "expr": "corridorkey_node_success_rate{node=~\"$node\"} * 100", "legendFormat": "{{ node }}" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "#EAB839", "value": 80 }, { "color": "green", "value": 95 }] } } }
     },
     {
       "type": "stat",
-      "title": "CPU Usage",
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "title": "CPU",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
       "targets": [{ "expr": "corridorkey_node_cpu_percent{node=~\"$node\"}", "legendFormat": "{{ node }}" }],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "thresholds": {
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 70 },
-              { "color": "red", "value": 90 }
-            ]
-          }
-        }
-      }
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "#EAB839", "value": 70 }, { "color": "red", "value": 90 }] } } }
     },
     {
       "type": "stat",
       "title": "RAM Used",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
       "targets": [{ "expr": "corridorkey_node_ram_used_gb{node=~\"$node\"}", "legendFormat": "{{ node }}" }],
       "fieldConfig": { "defaults": { "unit": "decgbytes", "thresholds": { "steps": [{ "color": "green", "value": null }] } } }
     },
     {
+      "type": "stat",
+      "title": "Jobs Done",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "targets": [{ "expr": "corridorkey_node_completed_jobs{node=~\"$node\"}", "legendFormat": "{{ node }}" }],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }] } } }
+    },
+    {
+      "type": "stat",
+      "title": "Frames",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "targets": [{ "expr": "corridorkey_node_total_frames{node=~\"$node\"}", "legendFormat": "{{ node }}" }],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "#009ADA", "value": null }] } } }
+    },
+    {
+      "type": "row",
+      "title": "GPU / VRAM",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "collapsed": false
+    },
+    {
       "type": "timeseries",
       "title": "VRAM Usage Over Time",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
       "targets": [
-        { "expr": "corridorkey_node_vram_total_gb{node=~\"$node\"}", "legendFormat": "total {{ gpu }}" },
-        { "expr": "corridorkey_node_vram_used_gb{node=~\"$node\"}", "legendFormat": "used {{ gpu }}" }
-      ],
-      "fieldConfig": { "defaults": { "unit": "decgbytes", "custom": { "fillOpacity": 10 } } }
-    },
-    {
-      "type": "timeseries",
-      "title": "CPU & RAM Over Time",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
-      "targets": [
-        { "expr": "corridorkey_node_cpu_percent{node=~\"$node\"}", "legendFormat": "CPU % {{ node }}" },
-        { "expr": "corridorkey_node_ram_used_gb{node=~\"$node\"}", "legendFormat": "RAM GB {{ node }}" }
-      ],
-      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 10 } } }
-    },
-    {
-      "type": "timeseries",
-      "title": "Success Rate Over Time",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
-      "targets": [
-        { "expr": "corridorkey_node_success_rate{node=~\"$node\"}", "legendFormat": "{{ node }}" }
+        { "expr": "corridorkey_node_vram_used_gb{node=~\"$node\"}", "legendFormat": "{{ node }} — {{ gpu }} (used)" },
+        { "expr": "corridorkey_node_vram_total_gb{node=~\"$node\"}", "legendFormat": "{{ node }} — {{ gpu }} (total)" }
       ],
       "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit", "min": 0, "max": 1,
-          "custom": { "fillOpacity": 10 },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 0.8 },
-              { "color": "green", "value": 0.95 }
-            ]
-          }
-        }
+        "defaults": { "unit": "decgbytes", "custom": { "fillOpacity": 15, "lineWidth": 2 } },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": ".*total.*" }, "properties": [{ "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } }, { "id": "custom.fillOpacity", "value": 0 }] }
+        ]
       }
+    },
+    {
+      "type": "gauge",
+      "title": "VRAM Utilization (current)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [{ "expr": "(corridorkey_node_vram_used_gb{node=~\"$node\"} / corridorkey_node_vram_total_gb{node=~\"$node\"}) * 100", "legendFormat": "{{ node }} — {{ gpu }}" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "#EAB839", "value": 70 }, { "color": "red", "value": 90 }] } } }
+    },
+    {
+      "type": "row",
+      "title": "CPU & RAM Over Time",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU Usage",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "targets": [{ "expr": "corridorkey_node_cpu_percent{node=~\"$node\"}", "legendFormat": "{{ node }}" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "custom": { "fillOpacity": 15, "lineWidth": 2, "gradientMode": "scheme" }, "color": { "mode": "palette-classic" } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "RAM Usage",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "targets": [
+        { "expr": "corridorkey_node_ram_used_gb{node=~\"$node\"}", "legendFormat": "{{ node }} used" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "decgbytes", "custom": { "fillOpacity": 15, "lineWidth": 2 } } }
+    },
+    {
+      "type": "row",
+      "title": "Reputation History",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "title": "Reputation Score Over Time",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [{ "expr": "corridorkey_node_reputation{node=~\"$node\"}", "legendFormat": "{{ node }}" }],
+      "fieldConfig": { "defaults": { "min": 0, "max": 100, "custom": { "fillOpacity": 10, "lineWidth": 2 }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "#EAB839", "value": 40 }, { "color": "green", "value": 70 }] } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cumulative Jobs & Frames",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        { "expr": "corridorkey_node_completed_jobs{node=~\"$node\"}", "legendFormat": "{{ node }} jobs" },
+        { "expr": "corridorkey_node_total_frames{node=~\"$node\"}", "legendFormat": "{{ node }} frames" }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2 } } },
+      "options": { "tooltip": { "mode": "multi" } }
     }
   ],
   "refresh": "30s",
@@ -117,12 +135,11 @@
     "list": [
       {
         "current": { "selected": true, "text": "All", "value": "$__all" },
-        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-        "definition": "label_values(corridorkey_node_cpu_percent, node)",
+        "definition": "label_values(corridorkey_node_online, node)",
         "includeAll": true,
         "multi": true,
         "name": "node",
-        "query": "label_values(corridorkey_node_cpu_percent, node)",
+        "query": "label_values(corridorkey_node_online, node)",
         "refresh": 2,
         "sort": 1,
         "type": "query"
@@ -132,7 +149,7 @@
   "time": { "from": "now-6h", "to": "now" },
   "timepicker": {},
   "timezone": "",
-  "title": "CorridorKey — Node Detail",
+  "title": "CorridorKey — Node Fleet",
   "uid": "corridorkey-nodes",
-  "version": 1
+  "version": 2
 }

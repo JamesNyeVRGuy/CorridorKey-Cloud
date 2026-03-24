@@ -1,28 +1,48 @@
 {
   "annotations": { "list": [] },
   "editable": true,
-  "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
   "links": [],
   "panels": [
     {
-      "type": "logs",
-      "title": "Application Logs",
-      "gridPos": { "h": 20, "w": 24, "x": 0, "y": 0 },
+      "type": "timeseries",
+      "title": "Log Volume by Level",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
       "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
       "targets": [
         {
-          "expr": "{job=\"corridorkey\"} | json | level=~\"$level\" | logger=~\"$logger\" | line_format \"{{.msg}}\"",
-          "legendFormat": "",
-          "refId": "A"
+          "expr": "sum by (level) (count_over_time({job=\"corridorkey\"} | json [$__interval]))",
+          "legendFormat": "{{ level }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 30, "lineWidth": 1, "stacking": { "mode": "normal" }, "drawStyle": "bars" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "ERROR" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FF5252", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "WARNING" }, "properties": [{ "id": "color", "value": { "fixedColor": "#EAB839", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "INFO" }, "properties": [{ "id": "color", "value": { "fixedColor": "#5DD879", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "error" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FF5252", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "warning" }, "properties": [{ "id": "color", "value": { "fixedColor": "#EAB839", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "info" }, "properties": [{ "id": "color", "value": { "fixedColor": "#5DD879", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Application Logs",
+      "gridPos": { "h": 20, "w": 24, "x": 0, "y": 6 },
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+      "targets": [
+        {
+          "expr": "{job=\"corridorkey\"} | json | level=~\"$level\" | logger=~\"$logger\" $search"
         }
       ],
       "options": {
         "showTime": true,
         "showLabels": true,
         "showCommonLabels": false,
-        "wrapLogMessage": false,
+        "wrapLogMessage": true,
         "prettifyLogMessage": false,
         "enableLogDetails": true,
         "dedupStrategy": "none",
@@ -30,25 +50,80 @@
       }
     },
     {
-      "type": "timeseries",
-      "title": "Log Volume by Level",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
-      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-      "targets": [
+      "type": "row",
+      "title": "Error Analysis",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "collapsed": true,
+      "panels": [
         {
-          "expr": "sum by (level) (count_over_time({job=\"corridorkey\"} | json [$__interval]))",
-          "legendFormat": "{{ level }}",
-          "refId": "A"
+          "type": "logs",
+          "title": "Errors & Warnings Only",
+          "gridPos": { "h": 12, "w": 24, "x": 0, "y": 27 },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "targets": [
+            {
+              "expr": "{job=\"corridorkey\"} | json | level=~\"ERROR|WARNING|error|warning\""
+            }
+          ],
+          "options": { "showTime": true, "enableLogDetails": true, "wrapLogMessage": true, "sortOrder": "Descending" }
+        },
+        {
+          "type": "logs",
+          "title": "Job Failures",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 39 },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "targets": [
+            {
+              "expr": "{job=\"corridorkey\"} |= \"failed\" |= \"job\""
+            }
+          ],
+          "options": { "showTime": true, "enableLogDetails": true, "wrapLogMessage": true, "sortOrder": "Descending" }
+        },
+        {
+          "type": "logs",
+          "title": "Pipeline Chaining",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 49 },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "targets": [
+            {
+              "expr": "{job=\"corridorkey\"} |= \"Pipeline chain\""
+            }
+          ],
+          "options": { "showTime": true, "enableLogDetails": true, "wrapLogMessage": true, "sortOrder": "Descending" }
         }
-      ],
-      "fieldConfig": {
-        "defaults": { "custom": { "fillOpacity": 20, "stacking": { "mode": "normal" } } },
-        "overrides": [
-          { "matcher": { "id": "byName", "options": "error" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
-          { "matcher": { "id": "byName", "options": "warning" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
-          { "matcher": { "id": "byName", "options": "info" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] }
-        ]
-      }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Node Activity",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 },
+      "collapsed": true,
+      "panels": [
+        {
+          "type": "logs",
+          "title": "Node Registration & Heartbeat Issues",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 28 },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "targets": [
+            {
+              "expr": "{job=\"corridorkey\"} |~ \"register|heartbeat|reap|dismissed\" | json"
+            }
+          ],
+          "options": { "showTime": true, "enableLogDetails": true, "wrapLogMessage": true, "sortOrder": "Descending" }
+        },
+        {
+          "type": "logs",
+          "title": "Credit Tracking",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 38 },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "targets": [
+            {
+              "expr": "{job=\"corridorkey\"} |= \"Credit\""
+            }
+          ],
+          "options": { "showTime": true, "enableLogDetails": true, "wrapLogMessage": true, "sortOrder": "Descending" }
+        }
+      ]
     }
   ],
   "refresh": "10s",
@@ -58,22 +133,21 @@
     "list": [
       {
         "current": { "selected": true, "text": "All", "value": "$__all" },
-        "description": "Log level filter",
+        "description": "Log level",
         "includeAll": true,
         "multi": true,
         "name": "level",
         "options": [
-          { "selected": false, "text": "error", "value": "error" },
-          { "selected": false, "text": "warning", "value": "warning" },
-          { "selected": true, "text": "info", "value": "info" },
-          { "selected": false, "text": "debug", "value": "debug" }
+          { "selected": false, "text": "ERROR", "value": "ERROR" },
+          { "selected": false, "text": "WARNING", "value": "WARNING" },
+          { "selected": true, "text": "INFO", "value": "INFO" }
         ],
-        "query": "error,warning,info,debug",
+        "query": "ERROR,WARNING,INFO",
         "type": "custom"
       },
       {
         "current": { "selected": true, "text": "All", "value": ".*" },
-        "description": "Logger name filter",
+        "description": "Python logger name",
         "includeAll": true,
         "multi": true,
         "name": "logger",
@@ -83,6 +157,12 @@
         "refresh": 2,
         "sort": 1,
         "type": "query"
+      },
+      {
+        "current": { "text": "", "value": "" },
+        "description": "Free text search (pipe filter)",
+        "name": "search",
+        "type": "textbox"
       }
     ]
   },
@@ -91,5 +171,5 @@
   "timezone": "",
   "title": "CorridorKey — Log Explorer",
   "uid": "corridorkey-logs",
-  "version": 1
+  "version": 2
 }

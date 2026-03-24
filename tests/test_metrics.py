@@ -13,24 +13,24 @@ class TestMetricFormatting:
     """Test the Prometheus text format helpers."""
 
     def test_basic_metric(self):
-        from web.api.metrics import _metric
+        from web.api.metrics import _m
 
-        result = _metric("test_gauge", 42, "A test gauge")
+        result = _m("test_gauge", 42, "A test gauge")
         assert "# HELP test_gauge A test gauge" in result
         assert "# TYPE test_gauge gauge" in result
         assert "test_gauge 42" in result
 
     def test_metric_with_labels(self):
-        from web.api.metrics import _metric
+        from web.api.metrics import _m
 
-        result = _metric("test_counter", 10, "A counter", "counter", 'job="test"')
+        result = _m("test_counter", 10, "A counter", "counter", 'job="test"')
         assert "# TYPE test_counter counter" in result
         assert 'test_counter{job="test"} 10' in result
 
     def test_labeled_metric(self):
-        from web.api.metrics import _labeled_metric
+        from web.api.metrics import _l
 
-        result = _labeled_metric("cpu_percent", 75.5, 'node="box-a"')
+        result = _l("cpu_percent", 75.5, 'node="box-a"')
         assert 'cpu_percent{node="box-a"} 75.5' in result
 
     def test_request_counter(self):
