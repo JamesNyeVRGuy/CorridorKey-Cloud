@@ -547,7 +547,9 @@ class NodeAgent:
         hb_thread = threading.Thread(target=self._heartbeat_loop, daemon=True, name="heartbeat")
         hb_thread.start()
 
-        # Poll loop
+        # Poll loop with backoff: start fast, slow down when idle, reset on job found
+        _idle_polls = 0
+        _MAX_IDLE_INTERVAL = 10.0  # max seconds between polls when idle
         logger.info(f"Polling for jobs... ({len(self._gpu_indices)} GPU(s) available)")
         while not self._stop.is_set() and not self._dismissed:
             # Check if we have an idle GPU
@@ -560,6 +562,7 @@ class NodeAgent:
 
             job_data = self._poll_job()
             if job_data:
+                _idle_polls = 0  # reset backoff
                 gpu_index = idle_gpus[0]
                 with self._busy_lock:
                     self._busy_gpus.add(gpu_index)
@@ -572,7 +575,10 @@ class NodeAgent:
                 )
                 t.start()
             else:
-                self._stop.wait(self.poll_interval)
+                _idle_polls += 1
+                # Backoff: 2s → 4s → 6s → 8s → 10s (cap)
+                wait = min(self.poll_interval * _idle_polls, _MAX_IDLE_INTERVAL)
+                self._stop.wait(wait)
 
     def _heartbeat_loop(self) -> None:
         while not self._stop.is_set() and not self._dismissed:
