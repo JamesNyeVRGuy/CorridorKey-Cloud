@@ -80,13 +80,14 @@ class GVMProcessor:
         seed_all(seed)
         
         logging.info(f"Loading GVM models from {model_base}...")
-        self.vae = AutoencoderKLTemporalDecoder.from_pretrained(model_base, subfolder="vae", torch_dtype=torch.float16)
-        self.scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(model_base, subfolder="scheduler")
-        
+        # Load from explicit subfolder paths — avoids requiring a root config.json
+        # (the HuggingFace repo doesn't have one)
+        self.vae = AutoencoderKLTemporalDecoder.from_pretrained(osp.join(model_base, "vae"), torch_dtype=torch.float16)
+        self.scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(osp.join(model_base, "scheduler"))
+
         unet_folder = unet_base if unet_base is not None else model_base
         self.unet = UNetSpatioTemporalConditionModel.from_pretrained(
-            unet_folder, 
-            subfolder="unet", 
+            osp.join(unet_folder, "unet"),
             class_embed_type=None,
             torch_dtype=torch.float16
         )
