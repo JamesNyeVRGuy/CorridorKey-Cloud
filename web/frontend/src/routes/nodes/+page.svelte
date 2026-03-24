@@ -33,6 +33,7 @@
 	let tokenLabel = $state('');
 	let tokenGenerating = $state(false);
 	let nodeTokens = $state<{ token_preview: string; label: string; org_id: string; node_id: string | null; revoked: boolean; created_at: number }[]>([]);
+	let showRevokedTokens = $state(false);
 	let userOrgs = $state<{ org_id: string; name: string }[]>([]);
 	let selectedOrgId = $state('');
 
@@ -391,27 +392,52 @@ volumes:
 
 				<!-- Active Tokens -->
 				{#if nodeTokens.length > 0}
-					<div class="setup-step">
-						<h3 class="step-title mono">ACTIVE TOKENS</h3>
-						<div class="token-list">
-							{#each nodeTokens as t}
-								<div class="token-row" class:revoked={t.revoked}>
-									<span class="token-preview mono">{t.token_preview}</span>
-									<span class="token-name">{t.label}</span>
-									{#if t.node_id}
-										<span class="token-status mono connected">CONNECTED</span>
-									{:else if t.revoked}
-										<span class="token-status mono revoked-badge">REVOKED</span>
-									{:else}
-										<span class="token-status mono unused">UNUSED</span>
-									{/if}
-									{#if !t.revoked}
-										<button class="btn-revoke mono" onclick={() => revokeToken(t.token_preview)}>REVOKE</button>
-									{/if}
+					{@const activeTokens = nodeTokens.filter(t => !t.revoked)}
+					{@const revokedTokens = nodeTokens.filter(t => t.revoked)}
+					{@const orgMap = Object.fromEntries(userOrgs.map(o => [o.org_id, o.name]))}
+					{@const orgIds = [...new Set(activeTokens.map(t => t.org_id))]}
+
+					{#each orgIds as oid}
+						{@const orgTokens = activeTokens.filter(t => t.org_id === oid)}
+						{#if orgTokens.length > 0}
+							<div class="setup-step">
+								<h3 class="step-title mono">{orgMap[oid] || 'Unknown Org'}</h3>
+								<div class="token-list">
+									{#each orgTokens as t}
+										<div class="token-row">
+											<span class="token-preview mono">{t.token_preview}</span>
+											<span class="token-name">{t.label}</span>
+											{#if t.node_id}
+												<span class="token-status mono connected">CONNECTED</span>
+											{:else}
+												<span class="token-status mono unused">UNUSED</span>
+											{/if}
+											<button class="btn-revoke mono" onclick={() => revokeToken(t.token_preview)}>REVOKE</button>
+										</div>
+									{/each}
 								</div>
-							{/each}
+							</div>
+						{/if}
+					{/each}
+
+					{#if revokedTokens.length > 0}
+						<div class="setup-step">
+							<button class="revoked-toggle mono" onclick={() => showRevokedTokens = !showRevokedTokens}>
+								REVOKED TOKENS ({revokedTokens.length}) {showRevokedTokens ? '▲' : '▼'}
+							</button>
+							{#if showRevokedTokens}
+								<div class="token-list">
+									{#each revokedTokens as t}
+										<div class="token-row revoked">
+											<span class="token-preview mono">{t.token_preview}</span>
+											<span class="token-name">{t.label}</span>
+											<span class="token-status mono revoked-badge">REVOKED</span>
+										</div>
+									{/each}
+								</div>
+							{/if}
 						</div>
-					</div>
+					{/if}
 				{/if}
 			</div>
 		{/if}
@@ -1637,6 +1663,18 @@ volumes:
 		white-space: pre; line-height: 1.6;
 	}
 
+	.token-org-group { margin-bottom: var(--sp-4); }
+	.token-org-label {
+		display: block; font-size: 10px; letter-spacing: 0.08em;
+		color: var(--accent); margin-bottom: var(--sp-2);
+		padding-bottom: var(--sp-1); border-bottom: 1px solid var(--border);
+	}
+	.revoked-toggle {
+		background: none; border: none; color: var(--text-tertiary);
+		font-size: 10px; letter-spacing: 0.08em; cursor: pointer;
+		padding: var(--sp-2) 0; text-align: left; width: 100%;
+	}
+	.revoked-toggle:hover { color: var(--text-secondary); }
 	.token-list { display: flex; flex-direction: column; gap: var(--sp-2); }
 	.token-row {
 		display: flex; align-items: center; gap: var(--sp-3);
