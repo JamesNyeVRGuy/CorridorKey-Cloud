@@ -112,6 +112,18 @@ async def upload_video(file: UploadFile, request: Request, name: str | None = No
                 )
                 if has_video or clip.state.value == "EXTRACTING":
                     job = GPUJob(job_type=JobType.VIDEO_EXTRACT, clip_name=clip.name)
+                    # Stamp with user/org context so the worker finds the clip in the right org dir
+                    from ..auth import get_current_user
+                    user = get_current_user(request)
+                    if user:
+                        job.submitted_by = user.user_id
+                        active_org = request.headers.get("X-Org-Id", "").strip()
+                        if active_org:
+                            job.org_id = active_org
+                        else:
+                            from ..orgs import get_org_store
+                            user_orgs = get_org_store().list_user_orgs(user.user_id)
+                            job.org_id = user_orgs[0].org_id if user_orgs else None
                     if queue.submit(job):
                         extract_jobs.append(job.id)
                         logger.info(f"Auto-queued extraction job {job.id} for '{clip.name}'")

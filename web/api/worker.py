@@ -282,22 +282,31 @@ def _run_job(service: CorridorKeyService, job: GPUJob, queue: GPUJobQueue, clips
     """Run a single job (called from thread pool). Job must already be claimed."""
     manager.send_job_status(job.id, JobStatus.RUNNING.value, org_id=job.org_id)
 
+    # Use org-scoped clips dir if the job has an org_id
+    job_clips_dir = clips_dir
+    if job.org_id:
+        from .org_isolation import resolve_node_clips_dir
+
+        scoped = resolve_node_clips_dir(job.org_id)
+        if scoped:
+            job_clips_dir = scoped
+
     try:
         if job.job_type == JobType.VIDEO_EXTRACT:
-            clip = _find_clip(service, clips_dir, job.clip_name)
+            clip = _find_clip(service, job_clips_dir, job.clip_name)
             if clip is None:
                 raise CorridorKeyError(f"Clip '{job.clip_name}' not found")
-            _execute_extraction(job, clip, clips_dir)
+            _execute_extraction(job, clip, job_clips_dir)
         elif job.job_type in _CPU_JOB_TYPES:
             raise CorridorKeyError(f"CPU job type '{job.job_type.value}' not yet implemented")
         else:
-            _execute_gpu_job(service, job, clips_dir)
+            _execute_gpu_job(service, job, job_clips_dir)
 
         queue.complete_job(job)
         manager.send_job_status(job.id, JobStatus.COMPLETED.value, org_id=job.org_id)
 
         # Auto-chain next pipeline step
-        _chain_next_pipeline_step(job, queue, clips_dir, service)
+        _chain_next_pipeline_step(job, queue, job_clips_dir, service)
     except JobCancelledError:
         queue.mark_cancelled(job)
         manager.send_job_status(job.id, JobStatus.CANCELLED.value, org_id=job.org_id)
@@ -391,7 +400,15 @@ def worker_loop(
                 queue.complete_job(job)
                 manager.send_job_status(job_id, JobStatus.COMPLETED.value, org_id=oid)
                 manager.send_clip_state_changed(clip_name, clip_state, org_id=oid)
-                _chain_next_pipeline_step(job, queue, clips_dir, service)
+                # Use org-scoped clips dir for pipeline chaining
+                sp_clips_dir = clips_dir
+                if oid:
+                    from .org_isolation import resolve_node_clips_dir
+
+                    scoped = resolve_node_clips_dir(oid)
+                    if scoped:
+                        sp_clips_dir = scoped
+                _chain_next_pipeline_step(job, queue, sp_clips_dir, service)
             else:
                 logger.error(f"Subprocess completed job {job_id} but job not found in queue")
                 manager.send_job_status(job_id, JobStatus.COMPLETED.value)
