@@ -120,6 +120,8 @@ def _download_from_server(main_url: str, name: str, abs_local: str) -> None:
     total_mb = sum(f["size"] for f in to_download) / (1024 * 1024)
     logger.info(f"Downloading {len(to_download)} files for '{name}' from server ({total_mb:.0f} MB)...")
 
+    import time as _time
+
     downloaded = 0
     with httpx.Client(timeout=600) as client:
         for entry in to_download:
@@ -129,14 +131,31 @@ def _download_from_server(main_url: str, name: str, abs_local: str) -> None:
 
             url = f"{base}/api/system/weights/{name}/file/{rel_path}"
             try:
+                dl_start = _time.time()
+                total_size = entry["size"]
+                total_mb = total_size / (1024 * 1024)
+                written = 0
+                last_pct = -1
                 with client.stream("GET", url) as resp:
                     resp.raise_for_status()
                     with open(local_path, "wb") as f:
                         for chunk in resp.iter_bytes(chunk_size=8 * 1024 * 1024):
                             f.write(chunk)
+                            written += len(chunk)
+                            if total_size > 10 * 1024 * 1024:
+                                pct = int(written / total_size * 100)
+                                if pct >= last_pct + 10:
+                                    elapsed = _time.time() - dl_start
+                                    speed = written / max(1, elapsed)
+                                    logger.info(
+                                        f"  {rel_path}: {written / (1024*1024):.0f}/{total_mb:.0f} MB "
+                                        f"({pct}%, {speed / (1024*1024):.1f} MB/s)"
+                                    )
+                                    last_pct = pct
                 downloaded += 1
-                size_mb = entry["size"] / (1024 * 1024)
-                logger.info(f"  [{downloaded}/{len(to_download)}] {rel_path} ({size_mb:.1f} MB)")
+                elapsed = _time.time() - dl_start
+                avg_speed = total_mb / max(1, elapsed)
+                logger.info(f"  [{downloaded}/{len(to_download)}] {rel_path} ({total_mb:.1f} MB, {avg_speed:.1f} MB/s)")
             except Exception as e:
                 logger.error(f"  Failed to download {rel_path}: {e}")
 
@@ -197,16 +216,36 @@ def _download_from_hf(name: str, local_dir: str) -> None:
         url = f"https://huggingface.co/{repo}/resolve/main/{rel_path}"
 
         try:
+            import time as _time
+
             with httpx.Client(timeout=600, follow_redirects=True) as client:
                 with client.stream("GET", url) as resp:
                     resp.raise_for_status()
+                    total_size = int(resp.headers.get("content-length", 0))
+                    total_mb = total_size / (1024 * 1024) if total_size else 0
+                    written = 0
+                    last_pct = -1
+                    dl_start = _time.time()
                     with open(local_path + ".part", "wb") as f:
                         for chunk in resp.iter_bytes(chunk_size=8 * 1024 * 1024):
                             f.write(chunk)
+                            written += len(chunk)
+                            if total_size > 10 * 1024 * 1024:  # progress for files >10MB
+                                pct = int(written / total_size * 100)
+                                if pct >= last_pct + 10:  # log every 10%
+                                    elapsed = _time.time() - dl_start
+                                    speed = written / max(1, elapsed)
+                                    logger.info(
+                                        f"  {rel_path}: {written / (1024*1024):.0f}/{total_mb:.0f} MB "
+                                        f"({pct}%, {speed / (1024*1024):.1f} MB/s)"
+                                    )
+                                    last_pct = pct
             os.replace(local_path + ".part", local_path)
             downloaded += 1
             size_mb = os.path.getsize(local_path) / (1024 * 1024)
-            logger.info(f"  [{downloaded}] {rel_path} ({size_mb:.1f} MB)")
+            elapsed = _time.time() - dl_start
+            avg_speed = size_mb / max(1, elapsed)
+            logger.info(f"  [{downloaded}] {rel_path} ({size_mb:.1f} MB, {avg_speed:.1f} MB/s)")
         except Exception as e:
             # Clean up partial file
             if os.path.isfile(local_path + ".part"):
