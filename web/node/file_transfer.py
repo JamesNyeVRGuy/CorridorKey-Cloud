@@ -274,7 +274,10 @@ class FileTransfer:
                     return r.json()
 
             data = _with_retry(_do_chunk, f"Bundle chunk {i + 1}/{len(chunks)}")
-            total_count += data.get("count", 0)
+            chunk_count = data.get("count", 0)
+            total_count += chunk_count
+            if len(chunks) > 1:
+                logger.info(f"  Chunk {i + 1}/{len(chunks)}: {len(compressed) / (1024*1024):.0f}MB → {chunk_count} files")
 
         mb = total_bytes / (1024 * 1024)
         chunk_info = f", {len(chunks)} chunks" if len(chunks) > 1 else ""
@@ -285,7 +288,11 @@ class FileTransfer:
         """Build gzip-compressed tar chunks, each under _MAX_BUNDLE_BYTES."""
         import gzip
 
+        import time as _time
+
         # Try single bundle first
+        logger.info(f"Compressing {len(files)} files for upload...")
+        t0 = _time.time()
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w") as tar:
             for fname in files:
@@ -293,12 +300,16 @@ class FileTransfer:
                 tar.add(fpath, arcname=fname)
         raw = buf.getvalue()
         compressed = gzip.compress(raw, compresslevel=1)
+        elapsed = _time.time() - t0
+        raw_mb = len(raw) / (1024 * 1024)
+        comp_mb = len(compressed) / (1024 * 1024)
+        logger.info(f"Compressed {raw_mb:.0f}MB → {comp_mb:.0f}MB ({raw_mb / max(1, comp_mb):.1f}x) in {elapsed:.1f}s")
 
         if len(compressed) <= self._MAX_BUNDLE_BYTES:
             return [compressed]
 
         # Too large — split files into chunks that fit
-        logger.debug(f"Bundle too large ({len(compressed) / (1024*1024):.0f}MB), splitting into chunks")
+        logger.info(f"Bundle {comp_mb:.0f}MB exceeds {self._MAX_BUNDLE_BYTES // (1024*1024)}MB limit, splitting into chunks")
         chunks = []
         chunk_files: list[str] = []
         chunk_raw_size = 0
