@@ -77,7 +77,7 @@
 
 	onMount(async () => {
 		const currentPath = page.url.pathname;
-		const isPublic = publicPaths.some((p) => currentPath.startsWith(p));
+		const isPublic = currentPath === '/' || publicPaths.some((p) => currentPath.startsWith(p));
 		const hasToken = !!localStorage.getItem('ck:auth_token');
 
 		// Quick path: if we have a token and we're on app pages, show the shell
