@@ -43,8 +43,8 @@
 	}
 
 
-	const publicPaths = ['/login', '/signup', '/pending', '/status'];
-	let isPublicPage = $derived(publicPaths.some((p) => page.url.pathname.startsWith(p)));
+	const publicPaths = ['/login', '/signup', '/pending', '/status', '/terms', '/privacy'];
+	let isPublicPage = $derived(page.url.pathname === '/' || publicPaths.some((p) => page.url.pathname.startsWith(p)));
 
 	async function refreshCredits() {
 		try {

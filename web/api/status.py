@@ -47,8 +47,10 @@ class StatusSnapshot:
     disk: str = "ok"
     nodes_online: int = 0
     nodes_total: int = 0
+    total_gpus: int = 0
     queue_depth: int = 0
     jobs_running: int = 0
+    frames_processed: int = 0
     uptime_seconds: float = 0.0
     avg_job_seconds: float = 0.0
     checks: dict = field(default_factory=dict)
@@ -66,8 +68,10 @@ class StatusSnapshot:
             },
             "nodes_online": self.nodes_online,
             "nodes_total": self.nodes_total,
+            "total_gpus": self.total_gpus,
             "queue_depth": self.queue_depth,
             "jobs_running": self.jobs_running,
+            "frames_processed": self.frames_processed,
             "uptime_seconds": self.uptime_seconds,
             "avg_job_seconds": self.avg_job_seconds,
         }
@@ -149,6 +153,7 @@ def _compute_status() -> StatusSnapshot:
         nodes = registry.list_nodes()
         snap.nodes_total = len(nodes)
         snap.nodes_online = sum(1 for n in nodes if n.is_alive)
+        snap.total_gpus = sum(len(n.gpus) if n.gpus else (1 if n.gpu_name else 0) for n in nodes if n.is_alive)
     except Exception:
         pass
 
@@ -173,6 +178,11 @@ def _compute_status() -> StatusSnapshot:
         if recent:
             durations = [j.completed_at - j.started_at for j in recent]
             snap.avg_job_seconds = round(sum(durations) / len(durations), 1)
+
+        # Total frames processed (all time)
+        snap.frames_processed = sum(
+            j.total_frames for j in queue.history_snapshot if j.status.value == "completed" and j.total_frames > 0
+        )
     except Exception:
         pass
 
