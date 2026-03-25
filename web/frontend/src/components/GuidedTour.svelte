@@ -34,14 +34,22 @@
 		{ id: 'clip-cost', selector: '.cost-estimate', title: 'GPU COST ESTIMATE', text: 'Shows estimated processing time and GPU credit cost based on frame count and recent job history. Helps you plan before submitting.', position: 'left', page: '/clips/' },
 		{ id: 'clip-download', selector: '.download-hero, .download-passes, .hero-row', title: 'DOWNLOAD', text: 'After processing completes, download your keyed EXR sequence. Individual passes (FG, Matte, Comp) available as separate downloads.', position: 'left', page: '/clips/' },
 
-		// Jobs page
-		{ id: 'jobs-running', selector: '.section-title, .job-list', title: 'JOB QUEUE', text: 'Running jobs show real-time progress. Queued jobs show position and estimated wait time. Click any job to see its log.', position: 'bottom', page: '/jobs' },
+		// Jobs page — comprehensive walkthrough
+		{ id: 'jobs-sections', selector: '.page-header, .section-title', title: 'JOB DASHBOARD', text: 'All your processing jobs in one place. Organized into Running, Queued, and History sections.', position: 'bottom', page: '/jobs' },
+		{ id: 'jobs-running', selector: '.job-list, .job-row', title: 'JOB PROGRESS', text: 'Running jobs show real-time frame progress, FPS, and duration. Click any job to expand its error log or details.', position: 'bottom', page: '/jobs' },
+		{ id: 'jobs-shards', selector: '.shard-group, .shard-group-header', title: 'SHARDED JOBS', text: 'Large clips are split across multiple GPUs. Click a shard group to expand and see each GPU\'s progress. The blue bar shows combined progress.', position: 'bottom', page: '/jobs' },
+		{ id: 'jobs-queue', selector: '.queue-eta, .job-status', title: 'QUEUE POSITION', text: 'Queued jobs show your position (#1, #2...) and estimated wait time based on recent processing speeds.', position: 'bottom', page: '/jobs' },
+		{ id: 'jobs-cancel', selector: '.cancel-btn, .btn-danger', title: 'CANCEL & MANAGE', text: 'Cancel running or queued jobs. Cancelled jobs still count GPU time used. Failed jobs can be retried.', position: 'bottom', page: '/jobs' },
 
-		// Nodes page
-		{ id: 'nodes-setup', selector: '.setup-step, .token-generate', title: 'ADD A NODE', text: 'Generate a token and follow the Docker setup guide to connect a GPU. Your node earns credits for every job it processes.', position: 'bottom', page: '/nodes' },
+		// Nodes page — comprehensive walkthrough
+		{ id: 'nodes-overview', selector: '.node-card, .node-grid, .section', title: 'RENDER FARM', text: 'Your connected GPU nodes. Green = online and ready. Yellow = processing a job. Each node shows its GPU, reputation score, and status.', position: 'bottom', page: '/nodes' },
+		{ id: 'nodes-token', selector: '.setup-toggle, .setup-guide', title: 'SETUP GUIDE', text: 'Click to open the node setup guide. Generate a token, copy the docker-compose config, and spin up a node in minutes.', position: 'bottom', page: '/nodes' },
+		{ id: 'nodes-tokens', selector: '.token-list, .token-row, .setup-step', title: 'NODE TOKENS', text: 'Each node needs a unique token to authenticate. Tokens are grouped by org. Revoke tokens to disconnect nodes.', position: 'bottom', page: '/nodes' },
+		{ id: 'nodes-local-gpu', selector: '.local-gpu-card, .local-gpu-toggle, .toggle-btn', title: 'LOCAL GPU', text: 'Toggle whether this server\'s own GPU processes jobs. Disable to reserve it, or set a claim delay to give remote nodes priority.', position: 'bottom', page: '/nodes' },
+		{ id: 'nodes-reputation', selector: '.rep-badge, .rep-wrapper', title: 'REPUTATION SCORE', text: 'Click any node\'s score to see the breakdown: success rate (50%), speed (20%), uptime (30%). Low scores mean the node drops jobs or goes offline frequently.', position: 'bottom', page: '/nodes' },
 
 		// Settings page
-		{ id: 'settings-outputs', selector: '.output-toggles, .inference-form', title: 'OUTPUT CONFIG', text: 'Choose which passes to generate. Processed + Comp is the default. Enable FG/Matte for advanced compositing workflows.', position: 'bottom', page: '/settings' },
+		{ id: 'settings-outputs', selector: '.output-toggles, .inference-form, .param-section', title: 'DEFAULT SETTINGS', text: 'Set default inference parameters and output passes for all new jobs. These can be overridden per-clip on the clip detail page.', position: 'bottom', page: '/settings' },
 	];
 
 	let currentStep = $state<TourStep | null>(null);
