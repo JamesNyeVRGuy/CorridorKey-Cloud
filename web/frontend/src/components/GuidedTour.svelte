@@ -20,6 +20,22 @@
 		{ id: 'nav-jobs', selector: 'a[href="/jobs"]', title: 'JOBS', text: 'Track processing progress. See running, queued, and completed jobs.', position: 'right' },
 		{ id: 'nav-nodes', selector: 'a[href="/nodes"]', title: 'NODES', text: 'Connect GPU nodes to the render farm. More GPUs = faster processing.', position: 'right' },
 		{ id: 'nav-settings', selector: 'a[href="/settings"]', title: 'SETTINGS', text: 'Configure inference parameters and output format defaults.', position: 'right' },
+
+		// Clips page
+		{ id: 'clips-upload', selector: '.upload-label, .btn-upload', title: 'UPLOAD', text: 'Drag & drop green screen footage here, or click to browse. Supports video (MP4, MOV), images (PNG, EXR, JPG), and ZIP archives.', position: 'bottom', page: '/clips' },
+
+		// Clip detail page
+		{ id: 'clip-pipeline', selector: '.btn-hero, .btn-muted', title: 'RUN PIPELINE', text: 'Click "Run Full Pipeline" to automatically generate alpha hints and key your footage. It distributes work across all available GPUs.', position: 'left', page: '/clips/' },
+		{ id: 'clip-passes', selector: '.pass-selector, .download-passes', title: 'OUTPUT PASSES', text: 'Processed = comp-ready RGBA EXR. Comp = PNG preview. Enable FG/Matte in settings for separate foreground and alpha passes.', position: 'left', page: '/clips/' },
+
+		// Jobs page
+		{ id: 'jobs-running', selector: '.section-title, .job-list', title: 'JOB QUEUE', text: 'Running jobs show real-time progress. Queued jobs show position and estimated wait time. Click any job to see its log.', position: 'bottom', page: '/jobs' },
+
+		// Nodes page
+		{ id: 'nodes-setup', selector: '.setup-step, .token-generate', title: 'ADD A NODE', text: 'Generate a token and follow the Docker setup guide to connect a GPU. Your node earns credits for every job it processes.', position: 'bottom', page: '/nodes' },
+
+		// Settings page
+		{ id: 'settings-outputs', selector: '.output-toggles, .inference-form', title: 'OUTPUT CONFIG', text: 'Choose which passes to generate. Processed + Comp is the default. Enable FG/Matte for advanced compositing workflows.', position: 'bottom', page: '/settings' },
 	];
 
 	let currentStep = $state<TourStep | null>(null);
@@ -101,11 +117,14 @@
 		setTimeout(showNextStep, 500);
 	});
 
-	// Re-check when page changes
+	// Re-check when page changes — delay to let DOM render
+	let _lastPath = '';
 	$effect(() => {
-		const _ = page.url.pathname;
-		if (typeof window !== 'undefined') {
-			setTimeout(showNextStep, 300);
+		const path = page.url.pathname;
+		if (path !== _lastPath) {
+			_lastPath = path;
+			// Wait for page DOM to render before looking for elements
+			setTimeout(showNextStep, 600);
 		}
 	});
 
