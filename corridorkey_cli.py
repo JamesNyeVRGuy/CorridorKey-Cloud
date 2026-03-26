@@ -37,7 +37,12 @@ from rich.progress import (
 from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.table import Table
 
-from clip_manager import (
+# Set ROCm env vars before any module imports torch.
+from device_utils import setup_rocm_env
+
+setup_rocm_env()
+
+from clip_manager import (  # noqa: E402
     LINUX_MOUNT_ROOT,
     ClipEntry,
     InferenceSettings,
@@ -51,11 +56,8 @@ from clip_manager import (
     run_videomama,
     scan_clips,
 )
-from CorridorKeyModule.backend import resolve_backend
-from device_utils import resolve_device, setup_rocm_env
-
-# ROCm env vars are read at operation time, so this is fine after imports.
-setup_rocm_env()
+from CorridorKeyModule.backend import resolve_backend  # noqa: E402
+from device_utils import resolve_device  # noqa: E402
 
 logger = logging.getLogger(__name__)
 console = Console()

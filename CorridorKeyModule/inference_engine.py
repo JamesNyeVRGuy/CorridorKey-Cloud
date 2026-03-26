@@ -13,14 +13,8 @@ import torchvision
 import torchvision.transforms.v2 as T
 import torchvision.transforms.v2.functional as TF
 
-from device_utils import setup_rocm_env
-
 from .core import color_utils as cu
 from .core.model_transformer import GreenFormer
-
-# ROCm env vars are read at operation time (not import time), so this is
-# fine after importing torch. Also sets up pytorch-rocm-gtt if installed.
-setup_rocm_env()
 
 # Persist torch.compile autotune cache across runs (default is /tmp which
 # gets wiped on reboot — saves 10-20 min re-autotuning on ROCm, ~30s on CUDA)
