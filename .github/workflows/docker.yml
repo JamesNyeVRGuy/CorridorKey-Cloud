@@ -22,22 +22,8 @@ permissions:
   packages: write
 
 jobs:
-  build-and-push:
+  build-web:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - image: corridorkey-web
-            dockerfile: web/Dockerfile.web
-            build-args-extra: ""
-          - image: corridorkey-node
-            dockerfile: web/Dockerfile.node
-            build-args-extra: "GPU_VENDOR=nvidia"
-            tag-suffix: "-nvidia"
-          - image: corridorkey-node
-            dockerfile: web/Dockerfile.node
-            build-args-extra: "GPU_VENDOR=amd"
-            tag-suffix: "-amd"
     steps:
       - uses: actions/checkout@v4
 
@@ -59,14 +45,11 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
-          flavor: |
-            suffix=${{ matrix.tag-suffix || '' }}
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/corridorkey-web
           tags: |
             type=ref,event=branch
             type=sha,prefix=
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=cloud,enable=${{ startsWith(github.ref, 'refs/tags/cloud') }}
             type=raw,value=stable,enable=${{ github.ref == 'refs/tags/stable' }}
@@ -75,13 +58,51 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: web/Dockerfile.web
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             BUILD_COMMIT=${{ github.sha }}
             BUILD_NUMBER=${{ steps.buildnum.outputs.ts }}
-            ${{ matrix.build-args-extra }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-node:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/cloud') || github.ref == 'refs/tags/stable' || github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        include:
+          - gpu_vendor: nvidia
+          - gpu_vendor: amd
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set build number
+        id: buildnum
+        run: echo "ts=$(git log -1 --format=%ct)" >> $GITHUB_OUTPUT
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: web/Dockerfile.node
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/corridorkey-node:${{ matrix.gpu_vendor }}
+          build-args: |
+            BUILD_COMMIT=${{ github.sha }}
+            BUILD_NUMBER=${{ steps.buildnum.outputs.ts }}
+            GPU_VENDOR=${{ matrix.gpu_vendor }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
