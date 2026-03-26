@@ -234,16 +234,13 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         app_metadata = claims.get("app_metadata", {})
         tier = app_metadata.get("tier", "pending")
 
-        # Cross-check tier against local store (matches HTTP middleware behavior)
+        # Cross-check tier against local store — local store is authoritative
         try:
             from .users import get_user_store
 
             local_user = get_user_store().get_user(user_id)
-            if local_user and local_user.tier in TIER_HIERARCHY:
-                local_idx = TIER_HIERARCHY.index(local_user.tier)
-                jwt_idx = TIER_HIERARCHY.index(tier) if tier in TIER_HIERARCHY else -1
-                if local_idx < jwt_idx:
-                    tier = local_user.tier
+            if local_user and local_user.tier in TIER_HIERARCHY and local_user.tier != tier:
+                tier = local_user.tier
         except Exception:
             pass
 

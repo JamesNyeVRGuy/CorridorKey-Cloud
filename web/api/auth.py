@@ -246,18 +246,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
             raw_claims=claims,
         )
 
-        # Cross-check tier against local store — use the more restrictive tier.
-        # This ensures demoted users lose access immediately, not after token expiry.
+        # Cross-check tier against local store — use the LOCAL store as authoritative.
+        # This ensures both promotions and demotions take effect immediately,
+        # without waiting for JWT refresh from GoTrue.
         if user_id:
             try:
                 from .users import get_user_store as _get_user_store
 
                 local_user = _get_user_store().get_user(user_id)
-                if local_user and local_user.tier != jwt_tier:
-                    local_idx = TIER_HIERARCHY.index(local_user.tier) if local_user.tier in TIER_HIERARCHY else -1
-                    jwt_idx = TIER_HIERARCHY.index(jwt_tier) if jwt_tier in TIER_HIERARCHY else -1
-                    if local_idx < jwt_idx:
-                        request.state.user.tier = local_user.tier
+                if local_user and local_user.tier in TIER_HIERARCHY and local_user.tier != jwt_tier:
+                    request.state.user.tier = local_user.tier
             except Exception:
                 pass  # Local store unavailable — fall back to JWT tier
 
