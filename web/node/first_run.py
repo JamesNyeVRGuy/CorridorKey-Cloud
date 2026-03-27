@@ -18,6 +18,21 @@ _CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".corridorkey")
 _CONFIG_FILE = os.path.join(_CONFIG_DIR, "node.env")
 
 
+def _config_paths() -> list[str]:
+    """All locations where node.env might exist."""
+    import sys
+
+    paths = [_CONFIG_FILE]
+    # Next to the executable (installer puts it here)
+    if getattr(sys, "frozen", False):
+        paths.insert(0, os.path.join(os.path.dirname(sys.executable), "node.env"))
+    else:
+        paths.append(os.path.join(os.path.dirname(__file__), "node.env"))
+    # Working directory
+    paths.append(os.path.join(os.getcwd(), "node.env"))
+    return paths
+
+
 def needs_setup() -> bool:
     """Check if first-run setup is needed."""
     # Already configured via environment
@@ -26,15 +41,22 @@ def needs_setup() -> bool:
     if url and url != "http://localhost:3000" and token:
         return False
 
-    # Config file exists with a real URL
-    if os.path.isfile(_CONFIG_FILE):
-        try:
-            with open(_CONFIG_FILE) as f:
-                content = f.read()
-            if "CK_MAIN_URL=" in content and "localhost:3000" not in content:
-                return False
-        except Exception:
-            pass
+    # Config file exists with a real URL AND a non-empty token
+    for path in _config_paths():
+        if os.path.isfile(path):
+            try:
+                vals = {}
+                with open(path) as f:
+                    for line in f:
+                        if "=" in line:
+                            k, v = line.strip().split("=", 1)
+                            vals[k] = v
+                url = vals.get("CK_MAIN_URL", "")
+                token = vals.get("CK_AUTH_TOKEN", "")
+                if url and "localhost:3000" not in url and token:
+                    return False
+            except Exception:
+                pass
 
     return True
 
@@ -107,14 +129,19 @@ def run_setup_dialog() -> bool:
             messagebox.showwarning("Missing fields", "Server URL and Auth Token are required.")
             return
 
-        # Save to config file
-        os.makedirs(_CONFIG_DIR, exist_ok=True)
-        with open(_CONFIG_FILE, "w") as f:
-            f.write(f"CK_MAIN_URL={url}\n")
-            f.write(f"CK_AUTH_TOKEN={token}\n")
-            f.write(f"CK_NODE_NAME={name}\n")
-            f.write("CK_NODE_GPUS=auto\n")
-            f.write("CK_NODE_PREWARM=true\n")
+        # Save to config file (next to exe for frozen, ~/.corridorkey/ for source)
+        config_content = (
+            f"CK_MAIN_URL={url}\nCK_AUTH_TOKEN={token}\nCK_NODE_NAME={name}\nCK_NODE_GPUS=auto\nCK_NODE_PREWARM=true\n"
+        )
+        import sys
+
+        if getattr(sys, "frozen", False):
+            save_path = os.path.join(os.path.dirname(sys.executable), "node.env")
+        else:
+            os.makedirs(_CONFIG_DIR, exist_ok=True)
+            save_path = _CONFIG_FILE
+        with open(save_path, "w") as f:
+            f.write(config_content)
 
         # Also set in current environment
         os.environ["CK_MAIN_URL"] = url

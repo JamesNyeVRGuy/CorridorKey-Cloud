@@ -16,12 +16,37 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# Relative to repo root (same layout as main machine)
-WEIGHT_SETS: dict[str, str] = {
+
+def _weights_root() -> str:
+    """Base directory for model weights.
+
+    Frozen builds (PyInstaller): next to the executable (persistent, user-visible)
+    CK_WEIGHTS_DIR env var: explicit override for custom location
+    Source/Docker: relative to working directory (same layout as repo)
+    """
+    import sys
+
+    # Explicit override takes priority
+    custom = os.environ.get("CK_WEIGHTS_DIR", "").strip()
+    if custom:
+        return custom
+
+    # Frozen build: store next to the .exe so weights survive restarts
+    # and the user can see/manage them (they're 10+ GB)
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+
+    return "."
+
+
+# Relative to weights root
+_WEIGHT_SUBDIRS: dict[str, str] = {
     "corridorkey": os.path.join("CorridorKeyModule", "checkpoints"),
     "gvm": os.path.join("gvm_core", "weights"),
     "videomama": os.path.join("VideoMaMaInferenceModule", "checkpoints", "VideoMaMa"),
 }
+
+WEIGHT_SETS: dict[str, str] = {k: os.path.join(_weights_root(), v) for k, v in _WEIGHT_SUBDIRS.items()}
 
 # HuggingFace repos for direct download fallback
 HF_REPOS: dict[str, dict] = {

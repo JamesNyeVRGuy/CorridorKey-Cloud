@@ -17,7 +17,14 @@ import torch
 
 logger = logging.getLogger(__name__)
 
-CHECKPOINT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "checkpoints")
+_custom_weights = os.environ.get("CK_WEIGHTS_DIR", "").strip()
+if _custom_weights:
+    CHECKPOINT_DIR = os.path.join(_custom_weights, "CorridorKeyModule", "checkpoints")
+elif getattr(sys, "frozen", False):
+    # Frozen build: weights next to the executable
+    CHECKPOINT_DIR = os.path.join(os.path.dirname(sys.executable), "CorridorKeyModule", "checkpoints")
+else:
+    CHECKPOINT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "checkpoints")
 TORCH_EXT = ".pth"
 MLX_EXT = ".safetensors"
 DEFAULT_IMG_SIZE = 2048
@@ -55,7 +62,8 @@ def resolve_backend(requested: str | None = None) -> str:
     return backend
 
 
-CHECKPOINT_DIR = os.path.join("CorridorKeyModule", "checkpoints")
+if not getattr(sys, "frozen", False) and not _custom_weights:
+    CHECKPOINT_DIR = os.path.join("CorridorKeyModule", "checkpoints")
 MLX_MODEL_URL = "https://github.com/nikopueringer/corridorkey-mlx/releases/download/v1.0.0/corridorkey_mlx.safetensors"
 MLX_MODEL_FILENAME = "corridorkey_mlx.safetensors"
 

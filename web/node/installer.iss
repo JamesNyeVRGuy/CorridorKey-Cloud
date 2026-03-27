@@ -47,6 +47,10 @@ Source: "..\..\dist\corridorkey-node\*"; DestDir: "{app}"; Flags: ignoreversion 
 ; Include a template config file
 Source: "node.env.example"; DestDir: "{app}"; DestName: "node.env"; Flags: onlyifdoesntexist
 
+[Dirs]
+; Hide the _internal folder (PyInstaller runtime — users don't need to see it)
+Name: "{app}\_internal"; Attribs: hidden system
+
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
@@ -57,8 +61,8 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "CorridorKeyNode"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
-; Launch after install
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+; Launch after install — shellexec avoids opening a console window
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent shellexec
 
 [UninstallDelete]
 ; Clean up config and cache on uninstall

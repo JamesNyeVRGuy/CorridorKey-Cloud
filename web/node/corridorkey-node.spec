@@ -38,11 +38,17 @@ a = Analysis(
     datas=[
         # App icon for tray
         (str(ROOT / "web" / "node" / "icon.png"), "web/node/"),
-    ] + ([
-        # Version info embedded at build time (CI writes this file)
-        (str(ROOT / "web" / "node" / "_version.env"), "web/node/"),
-    ] if (ROOT / "web" / "node" / "_version.env").exists() else []),
-    hiddenimports=_hidden + [
+    ]
+    + (
+        [
+            # Version info embedded at build time (CI writes this file)
+            (str(ROOT / "web" / "node" / "_version.env"), "web/node/"),
+        ]
+        if (ROOT / "web" / "node" / "_version.env").exists()
+        else []
+    ),
+    hiddenimports=_hidden
+    + [
         # Node agent modules (relative imports not always detected)
         "web.node",
         "web.node.agent",
@@ -142,18 +148,10 @@ _weight_patterns = [
     "diffusion_pytorch_model",
     "dino_projection_mlp",
 ]
-a.datas = [
-    (name, path, typ)
-    for name, path, typ in a.datas
-    if not any(p in name for p in _weight_patterns)
-]
+a.datas = [(name, path, typ) for name, path, typ in a.datas if not any(p in name for p in _weight_patterns)]
 
 # Also strip onnxruntime if it got pulled in (not needed for inference)
-a.binaries = [
-    (name, path, typ)
-    for name, path, typ in a.binaries
-    if "onnxruntime" not in name
-]
+a.binaries = [(name, path, typ) for name, path, typ in a.binaries if "onnxruntime" not in name]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
@@ -167,7 +165,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,  # UPX breaks torch .dll/.so files
-    console=True,
+    console=False,  # windowed app — no cmd prompt
     disable_windowed_traceback=False,
     argv_emulation=False,
     icon=str(ROOT / "web" / "node" / "icon.ico"),

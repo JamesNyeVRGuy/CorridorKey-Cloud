@@ -82,8 +82,7 @@ class NodeSettingsWindow:
                     pil_img = Image.open(p).convert("RGBA")
                     # Multiple sizes for taskbar (large) and title bar (small)
                     self._icon_imgs = [
-                        ImageTk.PhotoImage(pil_img.resize((s, s), Image.LANCZOS))
-                        for s in (256, 64, 48, 32, 16)
+                        ImageTk.PhotoImage(pil_img.resize((s, s), Image.LANCZOS)) for s in (256, 64, 48, 32, 16)
                     ]
                     self.root.iconphoto(True, *self._icon_imgs)
                     break
