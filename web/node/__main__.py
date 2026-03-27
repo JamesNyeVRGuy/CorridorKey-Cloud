@@ -23,7 +23,7 @@ def _security_checks() -> None:
     log = logging.getLogger(__name__)
 
     # Refuse to run as root (uid 0) unless explicitly overridden
-    if os.getuid() == 0 and not os.environ.get("CK_ALLOW_ROOT", "").strip():
+    if hasattr(os, "getuid") and os.getuid() == 0 and not os.environ.get("CK_ALLOW_ROOT", "").strip():
         log.error(
             "Node agent is running as root (uid 0). This is a security risk. "
             "Run as a non-root user, or set CK_ALLOW_ROOT=true to override."
@@ -68,10 +68,16 @@ def main() -> None:
         sys.exit(0)
 
     signal.signal(signal.SIGINT, shutdown)
-    signal.signal(signal.SIGTERM, shutdown)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, shutdown)
 
     agent.run()
 
 
 if __name__ == "__main__":
+    # Required for PyInstaller on Windows — must be first call.
+    # Prevents infinite subprocess spawn loop in frozen executables.
+    import multiprocessing
+
+    multiprocessing.freeze_support()
     main()

@@ -5,12 +5,27 @@ from __future__ import annotations
 import hashlib
 import os
 import platform
+import sys
 
-# Try loading .env from the working directory
+# Load config from .env files. Checked in order (first found wins per var):
+# 1. .env in the working directory (Docker / dev)
+# 2. node.env next to the executable (standalone binary)
+# 3. ~/.corridorkey/node.env (user config)
 try:
     from dotenv import load_dotenv
 
-    load_dotenv()
+    load_dotenv()  # .env in cwd
+
+    # Standalone binary: check next to executable
+    _exe_dir = os.path.dirname(os.path.abspath(getattr(sys, "executable", __file__)))
+    _exe_env = os.path.join(_exe_dir, "node.env")
+    if os.path.isfile(_exe_env):
+        load_dotenv(_exe_env, override=False)
+
+    # User home config
+    _home_env = os.path.join(os.path.expanduser("~"), ".corridorkey", "node.env")
+    if os.path.isfile(_home_env):
+        load_dotenv(_home_env, override=False)
 except ImportError:
     pass
 

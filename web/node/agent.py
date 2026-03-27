@@ -151,9 +151,9 @@ class NodeAgent:
             "shared_storage": self.shared_storage,
             "accepted_types": [t.strip() for t in config.ACCEPTED_TYPES.split(",") if t.strip()],
             "security": {
-                "running_as_root": os.getuid() == 0,
+                "running_as_root": getattr(os, "getuid", lambda: -1)() == 0,
                 "hardened": os.environ.get("CK_NODE_HARDENED", "").strip().lower() in ("true", "1"),
-                "uid": os.getuid(),
+                "uid": getattr(os, "getuid", lambda: -1)(),
                 "read_only_fs": not os.access("/", os.W_OK),
                 "agent_version": os.environ.get("CK_BUILD_COMMIT", "").strip() or _get_local_version(),
                 "build_number": int(os.environ.get("CK_BUILD_NUMBER", "0").strip() or "0") or _get_local_build_number(),
