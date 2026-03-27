@@ -14,6 +14,14 @@ if __name__ == "__main__":
     import signal
     import sys
 
+    # Force PyInstaller to bundle these (not detected via lazy/dynamic imports)
+    import httpx  # noqa: F401
+    import certifi  # noqa: F401
+    import h11  # noqa: F401
+    import anyio  # noqa: F401
+    import sniffio  # noqa: F401
+    import httpcore  # noqa: F401
+
     from web.node import config
     from web.node.agent import NodeAgent
     from web.node.log_buffer import install as install_log_buffer
