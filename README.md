@@ -1,239 +1,76 @@
-# CorridorKey
+# CorridorKey Cloud
 
 
 https://github.com/user-attachments/assets/1fb27ea8-bc91-4ebc-818f-5a3b5585af08
 
 
-When you film something against a green screen, the edges of your subject inevitably blend with the green background. This creates pixels that are a mix of your subject's color and the green screen's color. Traditional keyers struggle to untangle these colors, forcing you to spend hours building complex edge mattes or manually rotoscoping. Even modern "AI Roto" solutions typically output a harsh binary mask, completely destroying the delicate, semi-transparent pixels needed for a realistic composite.
+AI-powered green screen keying for professional VFX pipelines, running on a community-powered GPU farm. Upload your footage, get production-ready EXR output — no GPU required on your end.
 
-I built CorridorKey to solve this *unmixing* problem. 
+**[corridorkey.cloud](https://corridorkey.cloud)**
 
-You input a raw green screen frame, and the neural network completely separates the foreground object from the green screen. For every single pixel, even the highly transparent ones like motion blur or out-of-focus edges, the model predicts the true, un-multiplied straight color of the foreground element, alongside a clean, linear alpha channel. It doesn't just guess what is opaque and what is transparent; it actively reconstructs the color of the foreground object as if the green screen was never there.
+## How It Works
 
-No more fighting with garbage mattes or agonizing over "core" vs "edge" keys. Give CorridorKey a hint of what you want, and it separates the light for you.
+Traditional keyers struggle with semi-transparent pixels — motion blur, hair, out-of-focus edges. They force you into hours of garbage mattes and manual rotoscoping. CorridorKey's neural network solves the *unmixing* problem: for every pixel, it predicts the true foreground color and a clean linear alpha channel, as if the green screen was never there.
 
-## Alert!
+1. **Upload** — Drag in your green screen video or image sequence. Any resolution, any length.
+2. **Process** — The pipeline generates alpha hints automatically, then runs inference. Jobs are sharded across available GPUs in the community render farm.
+3. **Download** — Get your keyed EXRs: premultiplied RGBA ready for Nuke, After Effects, DaVinci Resolve, or Blender.
 
-This is a brand new release, I'm sure you will discover many ways it can be improved! I invite everyone to help. Join us on the "Corridor Creates" Discord to share ideas, work, forks, etc! https://discord.gg/zvwUrdWXJm
+### Output Passes
 
-If you want an easy-install, artist-friendly user interface version of CorridorKey, check out [EZ-CorridorKey](https://github.com/edenaion/EZ-CorridorKey)
-
-This project uses [uv](https://docs.astral.sh/uv/) to manage dependencies — it handles Python installation, virtual environments, and packages all in one step, so you don't need to worry about any of that. just run the appropriate install script for your OS.
-
-Naturally, I have not tested everything. If you encounter errors, please consider patching the code as needed and submitting a pull request.
-
-## Features
-
-*   **Physically Accurate Unmixing:** Clean extraction of straight color foreground and linear alpha channels, preserving hair, motion blur, and translucency.
-*   **Resolution Independent:** The engine dynamically scales inference to handle 4K plates while predicting using its native 2048x2048 high-fidelity backbone.
-*   **VFX Standard Outputs:** Natively reads and writes 16-bit and 32-bit Linear float EXR files, preserving true color math for integration in Nuke, Fusion, or Resolve.
-*   **Auto-Cleanup:** Includes a morphological cleanup system to automatically prune any tracking markers or tiny background features that slip through CorridorKey's detection.
-*   **WebUI:** Browser-based interface with drag-and-drop upload, one-click full pipeline, real-time progress, video playback, A/B comparison, and project management. Run via `docker compose --profile web up -d` and open `localhost:3000`.
-
-## Hardware Requirements
-
-This project was designed and built on a Linux workstation (Puget Systems PC) equipped with an NVIDIA RTX Pro 6000 with 96GB of VRAM. The community is ACTIVELY optimizing it for consumer GPUS.
-
-The most recent build should work on computers with 6-8 gig of VRAM, and it can run on most M1+ Mac systems with unified memory. Yes, it might even work on your old Macbook pro. Let us know on the Discord!
-
-*   **Windows Users (NVIDIA):** To run GPU acceleration natively on Windows, your system MUST have NVIDIA drivers that support **CUDA 12.8 or higher** installed. If your drivers only support older CUDA versions, the installer will likely fallback to the CPU.
-*   **AMD GPU Users (ROCm):** AMD Radeon RX 7000 series (RDNA3) and RX 9000 series (RDNA4) are supported via ROCm on **Linux**. Windows ROCm support is experimental (torch.compile is not yet functional). See the [AMD ROCm Setup](#amd-rocm-setup) section below.
-*   **GVM (Optional):** Requires approximately **80 GB of VRAM** and utilizes massive Stable Video Diffusion models.
-*   **VideoMaMa (Optional):** Natively requires a massive chunk of VRAM as well (originally 80GB+). While the community has tweaked the architecture to run at less than 24GB, those extreme memory optimizations have not yet been fully implemented in this repository.
-*   **BiRefNet (Optional):** Lightweight AlphaHint generator option.
-
-Because GVM and VideoMaMa have huge model file sizes and extreme hardware requirements, installing their modules is completely optional. You can always provide your own Alpha Hints generated from your editing program, BiRefNet, or any other method. The better the AlphaHint, the better the result.
+| Pass | Format | Description |
+|------|--------|-------------|
+| **Processed** | 4-channel EXR (linear, premultiplied RGBA) | Drop directly into any compositor |
+| **FG** | 3-channel EXR (sRGB straight) | Raw foreground color |
+| **Matte** | 1-channel EXR (linear) | Clean alpha channel |
+| **Comp** | PNG (sRGB) | Quick preview over checkerboard |
 
 ## Getting Started
 
-### 1. Installation
+### Use the Cloud (Recommended)
 
-This project uses **[uv](https://docs.astral.sh/uv/)** to manage Python and all dependencies. uv is a fast, modern replacement for pip that automatically handles Python versions, virtual environments, and package installation in a single step. You do **not** need to install Python yourself — uv does it for you.
+1. Go to [corridorkey.cloud](https://corridorkey.cloud)
+2. Sign up (invite-only during beta)
+3. Upload your footage
+4. Download your keyed results
 
-**For Windows Users (Automated):**
-1.  Clone or download this repository to your local machine.
-2.  Double-click `Install_CorridorKey_Windows.bat`. This will automatically install uv (if needed), set up your Python environment, install all dependencies, and download the CorridorKey model.
-    > **Note:** If this is the first time installing uv, any terminal windows you already had open won't see it. The installer script handles the current window automatically, but if you open a new terminal and get "'uv' is not recognized", just close and reopen that terminal.
-3.  (Optional) Double-click `Install_GVM_Windows.bat` and `Install_VideoMaMa_Windows.bat` to download the heavy optional Alpha Hint generator weights.
+No installation, no GPU, no Python. Processing happens on community-contributed GPU nodes.
 
-**For Linux / Mac Users (Automated):**
-1.  Clone or download this repository to your local machine.
-2.  Open terminal and write `bash`. Put a space after writing `bash`.
-3.  Drag and drop `Install_CorridorKey_Linux_Mac.sh` into the terminal. Then press enter.
-4.  (Optional) Do the 2. step again. But now drag and drop `Install_GVM_Linux_Mac.sh` and `Install_VideoMaMa_Linux_Mac.sh` to download the heavy optional Alpha Hint generator weights.
+### Self-Host the Server
 
-**For Linux / Mac Users (Manual):**
-1.  Clone or download this repository to your local machine.
-2.  Install uv if you don't have it:
-    ```bash
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    ```
-3.  Install all dependencies (uv will download Python 3.10+ automatically if needed):
-    ```bash
-    uv sync                  # CPU/MPS (default — works everywhere)
-    uv sync --extra cuda     # CUDA GPU acceleration (Linux/Windows)
-    uv sync --extra mlx      # Apple Silicon MLX acceleration
-    ```
-    For **AMD ROCm** setup, see the [AMD ROCm Setup](#amd-rocm-setup) section below.
-4.  **Download the Models:**
-    *   **CorridorKey v1.0 Model (~300MB):** Downloads automatically on first run. If no `.pth` file is found in `CorridorKeyModule/checkpoints/`, the engine fetches it from [CorridorKey's HuggingFace](https://huggingface.co/nikopueringer/CorridorKey_v1.0) and saves it as `CorridorKey.pth`. No manual download needed.
-    *   **GVM Weights (Optional):** [HuggingFace: geyongtao/gvm](https://huggingface.co/geyongtao/gvm)
-        *   Download using the CLI: `uv run hf download geyongtao/gvm --local-dir gvm_core/weights`
-    *   **VideoMaMa Weights (Optional):** [HuggingFace: SammyLim/VideoMaMa](https://huggingface.co/SammyLim/VideoMaMa)
-        *   Download the VideoMaMa fine-tuned weights:
-            ```
-            uv run hf download SammyLim/VideoMaMa --local-dir VideoMaMaInferenceModule/checkpoints/VideoMaMa
-            ```
-        *   VideoMaMa also requires the Stable Video Diffusion base model (VAE + image encoder only, ~2.5GB). Accept the license at [stabilityai/stable-video-diffusion-img2vid-xt](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt), then:
-            ```
-            uv run hf download stabilityai/stable-video-diffusion-img2vid-xt \
-              --local-dir VideoMaMaInferenceModule/checkpoints/stable-video-diffusion-img2vid-xt \
-              --include "feature_extractor/*" "image_encoder/*" "vae/*" "model_index.json"
-            ```
-        *   VideoMaMa is an amazing project, please go star their [repo](https://github.com/cvlab-kaist/VideoMaMa) and show them some support! 
-### 2. How it Works
+Run your own CorridorKey Cloud instance on your local network or studio infrastructure.
 
-CorridorKey requires two inputs to process a frame:
-1.  **The Original RGB Image:** The to-be-processed green screen footage. This requires the sRGB color gamut (interchangeable with REC709 gamut), and the engine can ingest either an sRGB gamma or Linear gamma curve. 
-2.  **A Coarse Alpha Hint:** A rough black-and-white mask that generally isolates the subject. This does *not* need to be precise. It can be generated by you with a rough chroma key or AI roto.
-
-I've had the best results using GVM or VideoMaMa to create the AlphaHint, so I've repackaged those projects and integrated them here as optional modules inside `clip_manager.py`. Here is how they compare:
-
-*   **GVM:** Completely automatic and requires no additional input. It works exceptionally well for people, but can struggle with inanimate objects.
-*   **VideoMaMa:** Requires you to provide a rough VideoMamaMaskHint (often drawn by hand or AI) telling it what you want to key. If you choose to use this, place your mask hint in the `VideoMamaMaskHint/` folder that the wizard creates for your shot. VideoMaMa results are spectacular and can be controlled more easily than GVM due to this mask hint.
-*   **Please** go show the creators of these projects some love and star their repos. [VideoMaMa](https://github.com/cvlab-kaist/VideoMaMa) and [GVM](https://github.com/aim-uofa/GVM)
-
-Perhaps in the future, I will implement other generators for the AlphaHint! In the meantime, the better your Alpha Hint, the better CorridorKey's final result will be. Experiment with different amounts of mask erosion or feathering. The model was trained on coarse, blurry, eroded masks, and is exceptional at filling in details from the hint. However, it is generally less effective at subtracting unwanted mask details if your Alpha Hint is expanded too far. 
-
-Please give feedback and share your results!
-
-### WebUI (Browser-based)
-
-CorridorKey includes a full web interface for managing clips, running inference, and previewing results — no terminal required.
-
-**Quick start with Docker Compose:**
+**Docker Compose (recommended):**
 ```bash
-docker compose --profile web up -d --build   # first run builds the image (~5 min)
-# Open http://localhost:3000
-
-# Subsequent runs (no rebuild needed unless code changes):
-docker compose --profile web up -d
-```
-
-**Quick start without Docker:**
-```bash
-uv sync --group dev --extra web          # install web dependencies
-uv sync --group dev --extra web --extra cuda  # with CUDA GPU support
-uv run uvicorn web.api.app:create_app --factory --port 3000
-# Open http://localhost:3000
-```
-
-**WebUI Features:**
-- **Upload & organize** — drag-and-drop videos or zipped frame sequences, organize into projects
-- **Full pipeline** — one-click processing: extract frames → generate alpha hints (GVM/VideoMaMa) → run inference
-- **Real-time progress** — WebSocket-driven progress bars with ETA and fps counter
-- **Frame viewer** — scrub through frames, play as video (ffmpeg-stitched MP4), A/B comparison mode
-- **Download outputs** — download any pass (FG, Matte, Comp, Processed) as ZIP
-- **Job queue** — parallel CPU jobs (extraction) + GPU jobs with configurable VRAM limits
-- **Weight management** — download CorridorKey, GVM, and VideoMaMa weights from HuggingFace directly in Settings
-- **VRAM monitoring** — system-wide GPU memory usage (via nvidia-smi)
-- **Right-click context menus** — rename projects, move clips, batch process, delete
-- **Keyboard shortcuts** — press `?` to see all shortcuts
-
-**Important notes:**
-- **Clip storage:** The WebUI manages clips under `Projects/`, while the CLI wizard uses `ClipsForInference/`. These directories are independent — clips created in the WebUI won't appear in the CLI and vice versa. Set `CK_CLIPS_DIR` to point at `ClipsForInference/` if you want both to use the same directory.
-- **Mac / MLX:** The WebUI has not been validated on Mac with MLX inference. The server will start and the UI will work, but the VRAM meter will show N/A (nvidia-smi is not available on Mac) and the VRAM concurrency limit for parallel jobs is not enforced on non-CUDA systems.
-- Model weights are volume-mounted and persist across Docker rebuilds.
-- The web service uses the `web` Docker Compose profile.
-
-### Render Farm (Distributed Processing)
-
-CorridorKey supports distributed GPU processing across multiple machines on your local network. Remote machines register as worker nodes, pull jobs from the main server, process them locally, and return results. No Redis, Celery, or message brokers required — just HTTP between machines.
-
-**Architecture:**
-- **Main machine** runs the WebUI and job queue as usual
-- **Remote nodes** poll for jobs every 2 seconds, process them, report results
-- Jobs show which node processed them in the Jobs panel
-- The Nodes page (`/nodes`) shows all machines, per-GPU status, and real-time VRAM
-
-#### Quick start — Docker (recommended)
-
-**Option 1: Docker run (one line, no checkout needed):**
-```bash
-docker run --gpus all \
-  -e CK_MAIN_URL=http://<main-machine-ip>:3000 \
-  -e CK_NODE_NAME=my-node \
-  ghcr.io/jamesnyevrguy/corridorkey-node:0.4.0
-```
-
-**Option 2: Docker Compose:**
-
-Pre-built compose files are in `deploy/`. Copy `.env.example` to `.env` and edit:
-
-```bash
-cd deploy
+git clone https://github.com/JamesNyeVRGuy/CorridorKey.git
+cd CorridorKey/deploy
 cp .env.example .env
-# Edit .env — set CK_MAIN_URL, CK_NODE_NAME, etc.
-```
-
-Web server:
-```bash
+# Edit .env — set your domain, auth settings, etc.
 docker compose -f docker-compose.web.yml up -d
+# Open http://localhost:3000
 ```
 
-Node agent:
+**From source:**
 ```bash
-docker compose -f docker-compose.node.yml up -d
-```
-
-These work with **Docker Desktop** too — open the `deploy/` folder in Docker Desktop, edit the `.env` file, and click Start. No terminal required.
-
-**Option 3: From source (no Docker):**
-
-On each remote machine with an NVIDIA GPU:
-```bash
-git clone https://github.com/nikopueringer/CorridorKey.git
+git clone https://github.com/JamesNyeVRGuy/CorridorKey.git
 cd CorridorKey
-uv sync --group dev --extra cuda
-CK_MAIN_URL=http://<main-machine-ip>:3000 CK_NODE_NAME=my-node uv run python -m web.node
+uv sync --group dev --extra web --extra cuda
+uv run uvicorn web.api.app:create_app --factory --port 3000
 ```
 
-Model weights auto-download from the main server on first start — no manual copying needed.
+## Contributing a GPU Node
 
-#### Shared network drive (optional, recommended)
+CorridorKey Cloud runs on a distributed render farm powered by the community. Connect your idle GPU as a node — it processes jobs for other users, and you earn credits to process your own footage.
 
-If both machines mount the same NAS/network share, file transfer is skipped entirely — the node reads and writes directly to the shared directory.
+### Option 1: Docker (Linux)
 
-Web server compose:
-```yaml
-services:
-  corridorkey-web:
-    image: ghcr.io/jamesnyevrguy/corridorkey-web:0.4.1
-    user: "${UID:-1000}:${GID:-1000}"
-    ports:
-      - "3000:3000"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    environment:
-      - OPENCV_IO_ENABLE_OPENEXR=1
-      - CK_CLIPS_DIR=/app/Projects
-    volumes:
-      - /mnt/nas/CorridorKey:/app/Projects
-      - ./weights/corridorkey:/app/CorridorKeyModule/checkpoints
-      - ./weights/gvm:/app/gvm_core/weights
-      - ./weights/videomama:/app/VideoMaMaInferenceModule/checkpoints/VideoMaMa
-```
+From the Nodes page in the web UI, select your GPU type (NVIDIA or AMD), generate a token, and copy the Docker Compose file. Or manually:
 
-Node agent compose:
 ```yaml
 services:
   corridorkey-node:
-    image: ghcr.io/jamesnyevrguy/corridorkey-node:0.4.0
+    image: ghcr.io/jamesnyevrguy/corridorkey-node:nvidia
+    restart: unless-stopped
     deploy:
       resources:
         reservations:
@@ -242,341 +79,234 @@ services:
               count: all
               capabilities: [gpu]
     environment:
-      - CK_MAIN_URL=http://<server-ip>:3000
-      - CK_NODE_NAME=render-node-1
-      - CK_SHARED_STORAGE=/app/Projects
+      - CK_MAIN_URL=https://corridorkey.cloud
+      - CK_AUTH_TOKEN=<your-token>
+      - CK_NODE_NAME=my-node
+      - CK_NODE_GPUS=auto
     volumes:
-      - /mnt/nas/CorridorKey:/app/Projects
+      - ck-weights:/app/CorridorKeyModule/checkpoints
+      - ck-weights-gvm:/app/gvm_core/weights
+      - ck-weights-vm:/app/VideoMaMaInferenceModule/checkpoints
+      - ck-compile-cache:/home/nodeuser/.cache/corridorkey
+
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_LABEL_ENABLE=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  ck-weights:
+  ck-weights-gvm:
+  ck-weights-vm:
+  ck-compile-cache:
 ```
 
-Both mount the same NAS path. Without a shared drive, the node transfers files over HTTP — works on any LAN, just slower for large sequences.
+```bash
+docker compose up -d
+```
 
-#### Job Sharding
+For **AMD GPUs**, use `ghcr.io/jamesnyevrguy/corridorkey-node:amd` and replace the `deploy` block with:
+```yaml
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    security_opt:
+      - seccomp=unconfined
+    group_add:
+      - video
+```
 
-Inference jobs can be automatically split across all available GPUs and nodes. Enable **"Auto-shard inference across GPUs"** in the Settings page. A 500-frame clip with 3 GPUs processes ~167 frames on each simultaneously.
+### Option 2: Standalone Binary (Windows & Linux)
 
-- Shards show combined progress in the Jobs page with per-GPU detail
-- Cancel all shards at once, retry only failed shards
-- Multi-GPU on a single machine works via process-per-GPU isolation
-- Minimum shard size (50 frames) prevents overhead on short clips
+Download the installer from [GitHub Releases](https://github.com/JamesNyeVRGuy/CorridorKey/releases). No Docker or Python needed.
 
-#### Node configuration (environment variables)
+1. Run the installer
+2. Paste your server URL and auth token on first launch
+3. The node runs in the system tray — shows status, credits earned, and GPU info
+4. Auto-updates from GitHub Releases
+
+The standalone binary ships with CPU torch and downloads GPU acceleration (CUDA or ROCm) on first launch.
+
+### Node Configuration
 
 | Variable | Default | Description |
 |---|---|---|
-| `CK_MAIN_URL` | `http://localhost:3000` | Main server address (required) |
-| `CK_NODE_NAME` | hostname | Display name in the Render Farm UI |
-| `CK_NODE_GPUS` | `auto` | Which GPUs to use: `auto`, `0`, `0,1` |
-| `CK_SHARED_STORAGE` | *(empty)* | Path if node mounts the same Projects directory. Skips HTTP file transfer. |
-| `CK_POLL_INTERVAL` | `2` | Seconds between job polls |
-| `CK_HEARTBEAT_INTERVAL` | `10` | Seconds between heartbeats |
-| `CK_AUTH_TOKEN` | *(empty)* | Shared secret for node authentication. Set same value on server and nodes. |
-| `CK_NODE_PREWARM` | `true` | Pre-load model into VRAM on startup to avoid cold-start delay. |
-| `CK_NODE_ACCEPTED_TYPES` | *(empty)* | Comma-separated job types to accept. Empty = all. |
+| `CK_MAIN_URL` | `http://localhost:3000` | Server address |
+| `CK_AUTH_TOKEN` | | Auth token from the Nodes page |
+| `CK_NODE_NAME` | hostname | Display name in the UI |
+| `CK_NODE_GPUS` | `auto` | GPU indices: `auto`, `0`, `0,1` |
+| `CK_SHARED_STORAGE` | | Path to shared NAS mount (skips HTTP transfer) |
+| `CK_NODE_PREWARM` | `true` | Pre-load model into VRAM on startup |
+| `CK_NODE_ACCEPTED_TYPES` | | Comma-separated job types to accept (empty = all) |
 
-#### Render Farm features
+### Render Farm Features
 
-- **Local GPU toggle** — disable local GPU processing so jobs only go to remote nodes (useful when the main machine's GPU is busy with other work)
-- **GPU in-use detection** — nodes check GPU utilization before accepting jobs; if another process (Unreal, Nuke, etc.) is using >50% GPU, the node waits
-- **Per-node scheduling** — set active hours from the Nodes UI (e.g. 20:00–08:00 for overnight rendering)
-- **Pause / resume** — instantly stop a node from accepting jobs without shutting it down
-- **Multi-GPU** — nodes with multiple GPUs can process jobs in parallel via process-per-GPU isolation
-- **Shared storage** — if both machines mount the same Projects directory, file transfer is skipped entirely (zero overhead)
-- **Auto weight sync** — nodes download missing model weights from the main server over LAN on startup
-- **Job priority** — reorder queued jobs, higher priority jobs process first
-- **Shard groups** — grouped progress display, cancel-all, retry-failed for sharded jobs
-- **Node logs** — view remote node log output from the Nodes page
-- **CPU/RAM monitoring** — real-time stats for local and remote machines
+- **Auto-sharding** — large jobs split across all available GPUs and nodes
+- **Multi-GPU** — nodes with multiple GPUs process jobs in parallel
+- **GPU credit system** — contribute compute, earn processing credits
+- **Shared storage** — mount the same NAS on server and nodes for zero-transfer processing
+- **Auto weight sync** — nodes download model weights on first start
+- **Watchtower auto-update** — Docker nodes pull new images automatically
+- **Per-node scheduling** — set active hours for overnight rendering
+- **Pause / resume** — stop accepting jobs without shutting down
+- **Node health monitoring** — CPU, RAM, VRAM, job history, logs viewable from the web UI
 
-**Requirements:** Remote nodes need an NVIDIA GPU with CUDA support. AMD GPUs are not supported (CorridorKey requires CUDA). WSL2 works if the Windows host has recent NVIDIA drivers (2021+). Docker Desktop works on all platforms.
+## GPU Support
 
-### Docker CLI (Linux + NVIDIA GPU)
+| GPU | VRAM | Status |
+|-----|------|--------|
+| NVIDIA GeForce RTX 30xx/40xx/50xx | 8GB+ | Full support (CUDA) |
+| NVIDIA RTX Pro / Quadro | 8GB+ | Full support (CUDA) |
+| AMD RX 7900 XTX / XT | 20-24GB | Supported (ROCm, Linux) |
+| AMD RX 7800 XT / 9070 XT | 16GB | Supported (ROCm, Windows native or Linux with GTT) |
+| Apple Silicon M1+ | 8GB+ unified | Supported (MLX backend) |
+| Intel ARC | | Community extension: [CorridorKeyOpenVINO](https://github.com/daniil-lyakhov/CorridorKeyOpenVINO) |
 
-If you prefer the command-line interface in Docker:
+**Minimum VRAM:** 6-8GB for inference. CorridorKey processes at 2048x2048 internally and scales output back to your original resolution.
 
-Prerequisites:
-- Docker Engine + Docker Compose plugin installed.
-- NVIDIA driver installed on the host (Linux), with CUDA compatibility for the PyTorch CUDA 12.8 wheels used by this project.
-- NVIDIA Container Toolkit installed and configured for Docker (`nvidia-smi` should work on host, and `docker run --rm --gpus all nvidia/cuda:12.8.0-runtime-ubuntu22.04 nvidia-smi` should succeed).
+## Platform Features
 
-1. Build the image:
+### Web UI
+- Drag-and-drop upload (video or image sequences)
+- One-click full pipeline: extract → alpha hint → inference
+- Real-time progress via WebSocket
+- Frame viewer with A/B comparison, zoom, wipe mode
+- Per-pass download (FG, Matte, Processed, Comp)
+- Job queue with priority ordering
+- Keyboard shortcuts (press `?`)
+
+### Authentication & Multi-Tenancy
+- Invite-only signup with admin approval
+- Organization workspaces with per-org file isolation
+- Trust tiers: member, contributor, org admin, platform admin
+- Per-tier resource limits (frame count, concurrent jobs)
+- GPU credit system — contribute compute to earn processing credits
+
+### Monitoring
+- Prometheus metrics endpoint (`/metrics`)
+- Grafana dashboards (platform overview, node fleet, log explorer)
+- Node reputation scoring (success rate, speed, uptime)
+- Per-node health history graphs
+
+## Development
+
+```bash
+# Setup
+uv sync --group dev --extra web --extra cuda
+
+# Tests
+uv run pytest                      # all tests
+uv run pytest -m "not gpu"         # skip GPU tests (CI default)
+
+# Lint & format
+uv run ruff check                  # lint
+uv run ruff format --check         # format check
+```
+
+For the CLI wizard (local processing without the cloud):
+```bash
+uv sync --group dev --extra cuda
+uv run corridorkey wizard /path/to/clips
+```
+
+For detailed engine internals, see `/CorridorKeyModule/README.md` and `/docs/LLM_HANDOVER.md`.
+
+Auto-generated codebase docs: [DeepWiki](https://deepwiki.com/nikopueringer/CorridorKey)
+
+## Contributing
+
+We welcome contributions — bug fixes, new features, GPU optimizations, documentation improvements.
+
+### Getting Set Up
+
+1. **Fork** the repository on GitHub
+2. **Clone** your fork:
    ```bash
-   docker build -t corridorkey:latest .
+   git clone https://github.com/YOUR_USERNAME/CorridorKey.git
+   cd CorridorKey
    ```
-2. Run an action directly (example: inference):
+3. **Install** dependencies:
    ```bash
-   docker run --rm -it --gpus all \
-     -e OPENCV_IO_ENABLE_OPENEXR=1 \
-     -v "$(pwd)/ClipsForInference:/app/ClipsForInference" \
-     -v "$(pwd)/Output:/app/Output" \
-     -v "$(pwd)/CorridorKeyModule/checkpoints:/app/CorridorKeyModule/checkpoints" \
-     -v "$(pwd)/gvm_core/weights:/app/gvm_core/weights" \
-     -v "$(pwd)/VideoMaMaInferenceModule/checkpoints:/app/VideoMaMaInferenceModule/checkpoints" \
-     corridorkey:latest run_inference --device cuda
+   uv sync --group dev --extra web --extra cuda
    ```
-3. Docker Compose (recommended for repeat runs):
+4. **Create a branch** for your work:
    ```bash
-   docker compose build
-   docker compose --profile gpu run --rm corridorkey run_inference --device cuda
-   docker compose --profile gpu run --rm corridorkey list
-   docker compose --profile cpu run --rm corridorkey-cpu run_inference --device cpu
-   ```
-4. Optional: pin to specific GPU(s) for multi-GPU workstations:
-   ```bash
-   NVIDIA_VISIBLE_DEVICES=0 docker compose --profile gpu run --rm corridorkey list
-   NVIDIA_VISIBLE_DEVICES=1,2 docker compose --profile gpu run --rm corridorkey run_inference --device cuda
+   git checkout -b feat/my-feature
    ```
 
-Notes:
-- You still need to place model weights in the same folders used by native runs (mounted above).
-- The container does not include kernel GPU drivers; those always come from the host. The image provides user-space dependencies and relies on Docker's NVIDIA runtime to pass through driver libraries/devices.
-- The wizard works too, but use a path inside the container, for example:
-  ```bash
-  docker run --rm -it --gpus all \
-    -e OPENCV_IO_ENABLE_OPENEXR=1 \
-    -v "$(pwd)/ClipsForInference:/app/ClipsForInference" \
-    -v "$(pwd)/Output:/app/Output" \
-    -v "$(pwd)/CorridorKeyModule/checkpoints:/app/CorridorKeyModule/checkpoints" \
-    -v "$(pwd)/gvm_core/weights:/app/gvm_core/weights" \
-    -v "$(pwd)/VideoMaMaInferenceModule/checkpoints:/app/VideoMaMaInferenceModule/checkpoints" \
-    corridorkey:latest wizard --win_path /app/ClipsForInference
-  docker compose --profile gpu run --rm corridorkey wizard --win_path /app/ClipsForInference
-  ```
+### Before Submitting a PR
 
-### 3. Usage: The Command Line Wizard
-
-For the easiest experience, use the provided launcher scripts. These scripts launch a prompt-based configuration wizard in your terminal.
-
-*   **Windows:** Drag-and-drop a video file or folder onto `CorridorKey_DRAG_CLIPS_HERE_local.bat` (Note: Only launch via Drag-and-Drop or CMD. Double-clicking the `.bat` directly will throw an error).
-*   **Linux / Mac:** Run or drag-and-drop a video file or folder onto `./CorridorKey_DRAG_CLIPS_HERE_local.sh`.
-* - Or write `bash` again in terminal. Put a space after and then drag-and-drop `CorridorKey_DRAG_CLIPS_HERE_local.sh` and your clip folder together into terminal, respectively. Then press enter.
-
-**Workflow Steps:**
-1.  **Launch:** You can drag-and-drop a single loose video file (like an `.mp4`), a shot folder containing image sequences, or even a master "batch" folder containing multiple different shots all at once onto the launcher script.
-2.  **Organization:** The wizard will detect what you dragged in. If you dropped loose video files or unorganized folders, the first prompt will ask if you want it to organize your clips into the proper structure. 
-    *   If you say Yes, the script will automatically create a shot folder, move your footage into an `Input/` sub-folder, and generate empty `AlphaHint/` and `VideoMamaMaskHint/` folders for you. This structure is required for the engine to pair your hints and footage correctly!
-3.  **Generate Hints (Optional):** If the wizard detects your shots are missing an `AlphaHint`, it will ask if you want to generate them automatically using the repackaged GVM or VideoMaMa modules.
-4.  **Configure:** Once your clips have both Inputs and AlphaHints, select "Process Ready Clips". The wizard will prompt you to configure the run:
-    *   **Gamma Space:** Tell the engine if your sequence uses a Linear or sRGB gamma curve.
-    *   **Despill Strength:** This is a traditional despill filter (0-10), if you wish to have it baked into the output now as opposed to applying it in your comp later.
-    *   **Auto-Despeckle:** Toggle automatic cleanup and define the size threshold. This isn't just for tracking dots, it removes any small, disconnected islands of pixels.
-    *   **Refiner Strength:** Use the default (1.0) unless you are experimenting with extreme detail pushing.
-5.  **Result:** The engine will generate several folders inside your shot directory:
-    *   `/Matte`: The raw Linear Alpha channel (EXR).
-    *   `/FG`: The raw Straight Foreground Color Object. (Note: The engine natively computes this in the sRGB gamut. You must manually convert this pass to linear gamma before being combined with the alpha in your compositing program).
-    *   `/Processed`: An RGBA image containing the Linear Foreground premultiplied against the Linear Alpha (EXR). This pass exists so you can immediately drop the footage into Premiere/Resolve for a quick preview without dealing with complex premultiplication routing. However, if you want more control over your image, working with the raw FG and Matte outputs will give you that.
-    *   `/Comp`: A simple preview of the key composited over a checkerboard (PNG).
-
-## But What About Training and Datasets?
-
-If enough people find this project interesting I'll get the training program and datasets uploaded so we can all really go to town making the absolute best keyer fine tunes! Just hit me with some messages on the Corridor Creates discord or here. If enough people lock in, I'll get this stuff packaged up. Hardware requirements are beefy and the gigabytes are plentiful so I don't want to commit the time unless there's demand.
-
-## Device Selection
-
-By default, CorridorKey auto-detects the best available compute device: **CUDA > MPS > CPU**.
-
-**Override via CLI flag:**
-```bash
-uv run python clip_manager.py --action wizard --win_path "V:\..." --device mps
-uv run python clip_manager.py --action run_inference --device cpu
-```
-
-**Override via environment variable:**
-```bash
-export CORRIDORKEY_DEVICE=cpu
-uv run python clip_manager.py --action wizard --win_path "V:\..."
-```
-
-Priority: `--device` flag > `CORRIDORKEY_DEVICE` env var > auto-detect.
-
-### Apple Silicon / MPS Troubleshooting
-
-**Confirm MPS is active:** Run with verbose logging to see which device was selected:
-```bash
-uv run python clip_manager.py --action list 2>&1 | grep -i "device\|backend\|mps"
-```
-
-**MPS operator errors** (`NotImplementedError: ... not implemented for 'MPS'`): Some PyTorch operations are not yet supported on MPS. Enable CPU fallback for those ops:
-```bash
-export PYTORCH_ENABLE_MPS_FALLBACK=1
-uv run python corridorkey_cli.py wizard --win_path "/path/to/clips"
-```
-
-**Silent CPU fallback**: If MPS silently falls back to CPU without this variable, the run will be much slower. Setting `PYTORCH_ENABLE_MPS_FALLBACK=1` in your shell profile (`~/.zshrc`) ensures it is always active.
-
-**Use native MLX instead of PyTorch MPS:** MLX avoids PyTorch's MPS layer entirely and typically runs faster on Apple Silicon. See the [Backend Selection](#backend-selection) section below for setup steps.
-
-### AMD ROCm Setup
-
-CorridorKey supports AMD GPUs via PyTorch's ROCm/HIP backend. The `torch.cuda.*` API works transparently on AMD — HIP intercepts all CUDA calls at runtime, so the inference code runs unchanged.
-
-**Supported GPUs (ROCm 7.2+):**
-- RX 7900 XTX (24GB) / XT (20GB) / GRE (16GB) — RDNA3, gfx1100
-- RX 7800 XT (16GB) / 7700 XT (12GB) — RDNA3, gfx1101
-- RX 9070 XT / 9070 (16GB) — RDNA4, gfx1201
-
-**VRAM requirements:** CorridorKey inference at 2048x2048 uses ~10GB on NVIDIA but ~18GB on AMD due to HIP allocator overhead. The RX 7900 XTX (24GB) and RX 7900 XT (20GB) run at full resolution. Cards with 16GB (RX 7800 XT, 9070 XT) work on Windows (which uses system RAM as overflow) but may OOM on Linux — see notes below.
-
-**Linux native (recommended):**
-```bash
-# Install AMD's ROCm torch wheels, then sync everything else
-pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/rocm6.3
-uv sync
-
-# Verify
-uv run python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
-```
-
-**WSL2 (Windows Subsystem for Linux):**
-
-Requires AMD Adrenalin 26.1.1+ driver on Windows. Install ROCm inside WSL2, then use AMD's WSL-specific torch wheels:
+Run the full check suite — CI will reject PRs that fail any of these:
 
 ```bash
-# 1. Install ROCm for WSL (Ubuntu 24.04)
-sudo apt update
-wget https://repo.radeon.com/amdgpu-install/7.2/ubuntu/noble/amdgpu-install_7.2.70200-1_all.deb
-sudo apt install ./amdgpu-install_7.2.70200-1_all.deb
-amdgpu-install -y --usecase=wsl,rocm --no-dkms
-
-# 2. Verify GPU is visible
-rocminfo  # should show your AMD GPU
-
-# 3. Install AMD's WSL torch wheels (Python 3.12)
-pip3 install \
-  https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2/torch-2.9.1%2Brocm7.2.0.lw.git7e1940d4-cp312-cp312-linux_x86_64.whl \
-  https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2/torchvision-0.24.0%2Brocm7.2.0.gitb919bd0c-cp312-cp312-linux_x86_64.whl \
-  https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2/triton-3.5.1%2Brocm7.2.0.gita272dfa8-cp312-cp312-linux_x86_64.whl
-
-# 4. Fix WSL runtime library conflict (required)
-location=$(pip3 show torch | grep Location | awk -F ": " '{print $2}')
-rm -f ${location}/torch/lib/libhsa-runtime64.so*
-
-# 5. Install CorridorKey deps AFTER torch (so pip doesn't overwrite ROCm torch)
-pip3 install -e .
+uv run pytest -m "not gpu"     # tests pass (GPU tests skipped in CI)
+uv run ruff check              # no lint errors
+uv run ruff format --check     # code is formatted
 ```
 
-**Windows native (experimental):**
-
-Windows ROCm requires Python 3.12 and AMD Adrenalin 25.3.1+ driver. `torch.compile` does not work on Windows ROCm — inference runs in eager mode (significantly slower than Linux).
-
-```powershell
-py -3.12 -m pip install https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm-7.2.0.dev0-py3-none-win_amd64.whl
-py -3.12 -m pip install --no-cache-dir https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torch-2.9.1+rocmsdk20260116-cp312-cp312-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torchvision-0.24.1+rocmsdk20260116-cp312-cp312-win_amd64.whl
-```
-
-**What CorridorKey does automatically on ROCm:**
-- Sets `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` so SDPA dispatches to flash attention kernels on RDNA3 (without this, attention falls back to a slow O(n²) path)
-- Sets `MIOPEN_FIND_MODE=2` for faster convolution kernel selection (reduces warmup from 5-8 minutes to seconds)
-- Uses `torch.compile(mode="default")` on Linux to avoid OOM during kernel autotuning on 16GB cards
-- Skips `torch.compile` entirely on Windows ROCm where Triton compilation hangs
-- Auto-detects ROCm via `/opt/rocm` (Linux), `HIP_PATH` (Windows), or `CORRIDORKEY_ROCM=1` env var (explicit opt-in)
-
-**First-run note:** The first inference run on a new AMD GPU triggers Triton kernel autotuning (10-20 minutes). This is cached in `~/.cache/corridorkey/inductor/` and only happens once per GPU architecture. Subsequent runs start instantly.
-
-**16GB cards on Linux:** CorridorKey at 2048x2048 needs ~18GB. Windows handles this transparently via shared GPU memory (system RAM overflow). On Linux, the GPU has a hard VRAM limit. If you hit OOM on a 16GB card, install `pytorch-rocm-gtt` to enable GTT (system RAM as GPU overflow) — CorridorKey detects and uses it automatically:
+Auto-fix formatting:
 ```bash
-pip install pytorch-rocm-gtt
-```
-GTT memory is accessed over PCIe (~10-20x slower than VRAM), so expect slower frame times on 16GB cards vs 20-24GB cards.
-
-**WSL2 limitation:** WSL2 cannot use GTT or shared memory — it has a hard VRAM limit. 16GB cards will OOM in WSL2 at 2048x2048. Use Windows native instead, or a card with 20GB+ VRAM.
-
-## Backend Selection
-
-CorridorKey supports two inference backends:
-- **Torch** (default on Linux/Windows) — CUDA, MPS, or CPU
-- **MLX** (Apple Silicon) — native Metal acceleration, no Torch overhead
-
-Resolution: `--backend` flag > `CORRIDORKEY_BACKEND` env var > auto-detect.
-Auto mode prefers MLX on Apple Silicon when available.
-
-**Override via CLI flag (corridorkey_cli.py):**
-```bash
-uv run python corridorkey_cli.py wizard --win_path "/path/to/clips" --backend mlx
-uv run python corridorkey_cli.py run_inference --backend torch
+uv run ruff format             # auto-format
+uv run ruff check --fix        # auto-fix safe lint issues
 ```
 
-### MLX Setup (Apple Silicon)
+### PR Guidelines
 
-1. Install the MLX backend:
-   ```bash
-   uv sync --extra mlx
-   ```
-2. Obtain the MLX weights (`.safetensors`) — pick **one** option:
+- **One logical change per PR.** A bug fix + a feature = two PRs.
+- **Write a clear title and description.** Explain *what* and *why*, not just *how*.
+- **Include tests** for new functionality when possible. Tests live in `tests/`.
+- **Don't break the NVIDIA path.** All AMD/ROCm code must be gated behind detection checks. Existing NVIDIA and MPS users should never notice your changes.
+- **Vendored code** (`gvm_core/`, `VideoMaMaInferenceModule/`) is excluded from linting. Keep changes to these directories minimal.
+- **Frontend** is SvelteKit 5 (runes mode) at `web/frontend/src/`. Follow the existing design system in `app.css`.
 
-   **Option A — Download pre-converted weights (simplest):**
-   ```bash
-   # Download weights from GitHub Releases into a local cache directory
-   uv run python -m corridorkey_mlx weights download
+### Architecture Overview
 
-   # Print the cached path, then copy to the checkpoints folder
-   WEIGHTS=$(uv run python -m corridorkey_mlx weights download --print-path)
-   cp "$WEIGHTS" CorridorKeyModule/checkpoints/corridorkey_mlx.safetensors
-   ```
+| Directory | Purpose |
+|-----------|---------|
+| `CorridorKeyModule/` | Neural network model, inference engine, color math |
+| `backend/` | Service layer — frame I/O, job queue, clip state |
+| `web/api/` | FastAPI server — routes, auth, WebSocket, metrics |
+| `web/frontend/` | SvelteKit UI |
+| `web/node/` | Node agent — tray app, file transfer, weight sync |
+| `web/shared/` | GPU subprocess worker (shared between server and node) |
+| `device_utils.py` | Cross-platform GPU detection (NVIDIA, AMD, MPS) |
+| `gvm_core/` | GVM alpha hint generator (vendored, upstream research code) |
+| `VideoMaMaInferenceModule/` | VideoMaMa alpha hint generator (vendored) |
+| `BiRefNetModule/` | BiRefNet salient object detector (vendored) |
 
-   **Option B — Convert from an existing `.pth` checkpoint:**
-   ```bash
-   # Clone the MLX repo (contains the conversion script)
-   git clone https://github.com/nikopueringer/corridorkey-mlx.git
-   cd corridorkey-mlx
-   uv sync
+### Test Markers
 
-   # Convert (point --checkpoint at your CorridorKey.pth)
-   uv run python scripts/convert_weights.py \
-       --checkpoint ../CorridorKeyModule/checkpoints/CorridorKey_v1.0.pth \
-       --output ../CorridorKeyModule/checkpoints/corridorkey_mlx.safetensors
-   cd ..
-   ```
+- `@pytest.mark.gpu` — requires CUDA GPU (skipped in CI)
+- `@pytest.mark.mlx` — requires Apple Silicon + MLX
+- `@pytest.mark.slow` — long-running tests
 
-   Either way the final file must be at:
-   ```
-   CorridorKeyModule/checkpoints/corridorkey_mlx.safetensors
-   ```
-3. Run with auto-detection or explicit backend:
-   ```bash
-   CORRIDORKEY_BACKEND=mlx uv run python clip_manager.py --action run_inference
-   ```
+## Licensing
 
-MLX uses img_size=2048 by default (same as Torch).
+Use CorridorKey for whatever you'd like, including commercial projects. You MAY NOT repackage and sell it. Variations must remain under the same license and include the CorridorKey name.
 
-### Troubleshooting
-- **"No .safetensors checkpoint found"** — place MLX weights in `CorridorKeyModule/checkpoints/`
-- **"corridorkey_mlx not installed"** — run `uv sync --extra mlx`
-- **"MLX requires Apple Silicon"** — MLX only works on M1+ Macs
-- **Auto picked Torch unexpectedly** — set `CORRIDORKEY_BACKEND=mlx` explicitly
+You MAY NOT offer inference with this model as a paid API service. For commercial software integration, contact contact@corridordigital.com.
 
-## Advanced Usage
+This license is a variation of [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
 
-For developers looking for more details on the specifics of what is happening in the CorridorKey engine, check out the README in the `/CorridorKeyModule` folder. We also have a dedicated handover document outlining the pipeline architecture for AI assistants in `/docs/LLM_HANDOVER.md`.
+## Credits
 
-You can also explore the full, auto-generated codebase documentation on [DeepWiki](https://deepwiki.com/nikopueringer/CorridorKey).
+**CorridorKey** — Created by [Niko Pueringer](https://github.com/nikopueringer) / [Corridor Digital](https://www.youtube.com/@corridorcrew)
 
-### Running Tests
+**CorridorKey Cloud** — Distributed GPU platform by [James Nye](https://github.com/JamesNyeVRGuy) and [DCRepublic](https://github.com/DCRepublic)
 
-The project includes unit tests for the color math and compositing pipeline. No GPU or model weights required — tests run in a few seconds on any machine.
+**Alpha Hint Generators:**
+- **[GVM](https://github.com/aim-uofa/GVM)** — Generative Video Matting by the AIM research team at Zhejiang University. Licensed under [BSD-2-Clause](https://opensource.org/license/bsd-2-clause).
+- **[VideoMaMa](https://github.com/cvlab-kaist/VideoMaMa)** — Video matting by CVLAB at KAIST. Licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/). Model checkpoints subject to [Stability AI Community License](https://stability.ai/license).
 
-```bash
-uv sync --group dev   # install test dependencies (pytest)
-uv run pytest          # run all tests
-uv run pytest -v       # verbose output (shows each test name)
-```
+By using these optional modules, you agree to their respective licenses.
 
-## CorridorKey Licensing and Permissions
+## Community
 
-Use this tool for whatever you'd like, including for processing images as part of a commercial project! You MAY NOT repackage this tool and sell it, and any variations or improvements of this tool that are released must remain under the same license, and must include the name Corridor Key.
-
-You MAY NOT offer inference with this model as a paid API service. If you run a commercial software package or inference service and wish to incoporate this tool into your software, shoot us an email to work out an agreement! I promise we're easy to work with. contact@corridordigital.com. Outside of the stipulations listed above, this license is effectively a variation of [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License (CC BY-NC-SA 4.0)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
-
-Please keep the Corridor Key name in any future forks or releases!
-
-## Community Extensions
-* [CorridorKeyOpenVINO](https://github.com/daniil-lyakhov/CorridorKeyOpenVINO) - Run the CorridorKey model quickly on Intel hardware with the OpenVINO inference framework.
-
-## Acknowledgements and Licensing
-
-CorridorKey integrates several open-source modules for Alpha Hint generation. We would like to explicitly credit and thank the following research teams:
-
-*   **Generative Video Matting (GVM):** Developed by the Advanced Intelligent Machines (AIM) research team at Zhejiang University. The GVM code and models are heavily utilized in the `gvm_core` module. Their work is licensed under the [2-clause BSD License (BSD-2-Clause)](https://opensource.org/license/bsd-2-clause). You can find their source repository here: [aim-uofa/GVM](https://github.com/aim-uofa/GVM). Give them a star!
-*   **VideoMaMa:** Developed by the CVLAB at KAIST. The VideoMaMa architecture is utilized within the `VideoMaMaInferenceModule`. Their code is released under the [Creative Commons Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0)](https://creativecommons.org/licenses/by-nc/4.0/), and their specific foundation model checkpoints (`dino_projection_mlp.pth`, `unet/*`) are subject to the [Stability AI Community License](https://stability.ai/license). You can find their source repository here: [cvlab-kaist/VideoMaMa](https://github.com/cvlab-kaist/VideoMaMa). Give them a star!
-
-By using these optional modules, you agree to abide by their respective Non-Commercial licenses. Please review their repositories for full terms.
+- **Discord:** [Corridor Creates](https://discord.gg/44tHTSCGVQ)
+- **Easy install UI:** [EZ-CorridorKey](https://github.com/edenaion/EZ-CorridorKey) by edenaion
+- **Intel support:** [CorridorKeyOpenVINO](https://github.com/daniil-lyakhov/CorridorKeyOpenVINO) by daniil-lyakhov
