@@ -7,6 +7,7 @@ Provides status indicator, credits display, pause/resume, and quit controls.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import webbrowser
 from typing import Any
@@ -40,17 +41,47 @@ _COLORS = {
 }
 
 
+def _load_base_icon() -> Image.Image | None:
+    """Load the CorridorKey diamond icon from disk."""
+    import sys
+
+    paths = [
+        os.path.join(os.path.dirname(__file__), "icon.png"),
+    ]
+    # Frozen build: check next to executable
+    if getattr(sys, "frozen", False):
+        paths.insert(0, os.path.join(os.path.dirname(sys.executable), "icon.png"))
+        paths.insert(0, os.path.join(sys._MEIPASS, "web", "node", "icon.png"))
+
+    for p in paths:
+        if os.path.isfile(p):
+            try:
+                return Image.open(p).convert("RGBA")
+            except Exception:
+                pass
+    return None
+
+
+_BASE_ICON = _load_base_icon()
+
+
 def _create_icon(status: str = "idle") -> Image.Image:
-    """Generate a 64x64 tray icon with status indicator dot."""
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    """Create a 64x64 tray icon with status indicator dot."""
+    if _BASE_ICON:
+        img = _BASE_ICON.resize((64, 64), Image.LANCZOS).copy()
+    else:
+        # Fallback: generate simple icon if png not found
+        img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle([4, 4, 60, 60], radius=8, fill=(26, 26, 46, 255))
+        draw.text((14, 16), "CK", fill=(255, 242, 3, 255))
+
+    # Status dot overlay
     draw = ImageDraw.Draw(img)
-    # Dark rounded base
-    draw.rounded_rectangle([4, 4, 60, 60], radius=8, fill=(26, 26, 46, 255))
-    # "CK" text (simplified — just two lines forming a K shape)
-    draw.text((14, 16), "CK", fill=(255, 242, 3, 255))
-    # Status dot
     color = _COLORS.get(status, _COLORS["idle"])
     draw.ellipse([44, 44, 60, 60], fill=color)
+    # Dark outline for visibility on light taskbars
+    draw.ellipse([44, 44, 60, 60], outline=(20, 20, 20, 200), width=1)
     return img
 
 

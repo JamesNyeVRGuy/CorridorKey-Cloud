@@ -36,9 +36,12 @@ a = Analysis(
     pathex=[str(ROOT)],
     binaries=[],
     datas=[
+        # App icon for tray
+        (str(ROOT / "web" / "node" / "icon.png"), "web/node/"),
+    ] + ([
         # Version info embedded at build time (CI writes this file)
         (str(ROOT / "web" / "node" / "_version.env"), "web/node/"),
-    ] if (ROOT / "web" / "node" / "_version.env").exists() else [],
+    ] if (ROOT / "web" / "node" / "_version.env").exists() else []),
     hiddenimports=_hidden + [
         # Node agent modules (relative imports not always detected)
         "web.node",
@@ -167,7 +170,7 @@ exe = EXE(
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
-    icon=None,
+    icon=str(ROOT / "web" / "node" / "icon.ico"),
 )
 
 coll = COLLECT(
