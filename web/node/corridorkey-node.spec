@@ -14,17 +14,29 @@ Model weights are also downloaded on first launch.
 import sys
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_submodules
+
 block_cipher = None
 
 # Repo root (spec file is at web/node/corridorkey-node.spec → up 2 levels)
 ROOT = Path(SPECPATH).parent.parent
+
+# Collect all submodules for packages that use dynamic imports
+_hidden = (
+    collect_submodules("httpx")
+    + collect_submodules("httpcore")
+    + collect_submodules("anyio")
+    + collect_submodules("h11")
+    + collect_submodules("sniffio")
+    + collect_submodules("certifi")
+)
 
 a = Analysis(
     [str(ROOT / "web" / "node" / "corridorkey_node_main.py")],
     pathex=[str(ROOT)],
     binaries=[],
     datas=[],
-    hiddenimports=[
+    hiddenimports=_hidden + [
         # Node agent modules (relative imports not always detected)
         "web.node",
         "web.node.agent",
