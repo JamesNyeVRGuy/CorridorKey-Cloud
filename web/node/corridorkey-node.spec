@@ -114,14 +114,6 @@ a = Analysis(
         "sentry_sdk",
         "boto3",
         "botocore",
-        # Torch testing / unused
-        "torch.testing",
-        "torch.utils.benchmark",
-        "caffe2",
-        # Plotting (not needed at runtime)
-        "matplotlib",
-        "matplotlib.pyplot",
-        "tkinter",
         # IPython / Jupyter
         "IPython",
         "jupyter",
