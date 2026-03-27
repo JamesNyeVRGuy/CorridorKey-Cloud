@@ -3,25 +3,24 @@
 Uses absolute imports to avoid relative import failures in frozen builds.
 """
 
+import logging
 import multiprocessing
+import os
+import signal
+import sys
+
+# Force PyInstaller to bundle these — they're loaded dynamically by httpx/anyio
+# and PyInstaller's static analysis doesn't find them. These MUST be at module
+# level (not inside if __name__ == "__main__") or PyInstaller won't see them.
+import anyio  # noqa: F401
+import certifi  # noqa: F401
+import h11  # noqa: F401
+import httpcore  # noqa: F401
+import httpx  # noqa: F401
+import sniffio  # noqa: F401
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
-
-    # Absolute imports — PyInstaller can't resolve relative imports in __main__
-    import logging
-    import os
-    import signal
-    import sys
-
-    import anyio  # noqa: F401
-    import certifi  # noqa: F401
-    import h11  # noqa: F401
-    import httpcore  # noqa: F401
-
-    # Force PyInstaller to bundle these (not detected via lazy/dynamic imports)
-    import httpx  # noqa: F401
-    import sniffio  # noqa: F401
 
     logging.basicConfig(
         level=logging.INFO,
