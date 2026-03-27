@@ -14,22 +14,29 @@ if __name__ == "__main__":
     import signal
     import sys
 
-    # Force PyInstaller to bundle these (not detected via lazy/dynamic imports)
-    import httpx  # noqa: F401
+    import anyio  # noqa: F401
     import certifi  # noqa: F401
     import h11  # noqa: F401
-    import anyio  # noqa: F401
-    import sniffio  # noqa: F401
     import httpcore  # noqa: F401
 
-    from web.node import config
-    from web.node.agent import NodeAgent
-    from web.node.log_buffer import install as install_log_buffer
+    # Force PyInstaller to bundle these (not detected via lazy/dynamic imports)
+    import httpx  # noqa: F401
+    import sniffio  # noqa: F401
 
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
+
+    # GPU addon: detect GPU and install CUDA/ROCm torch before anything imports torch
+    from web.node.gpu_addon import ensure_gpu_addon
+
+    gpu_vendor = ensure_gpu_addon()
+
+    from web.node import config
+    from web.node.agent import NodeAgent
+    from web.node.log_buffer import install as install_log_buffer
+
     install_log_buffer()
 
     if config.MAIN_URL == "http://localhost:3000":
@@ -45,6 +52,10 @@ if __name__ == "__main__":
 
             tray = TrayApp()
             tray.start()
+            if gpu_vendor:
+                tray.set_status("connecting")
+            else:
+                tray._notify("No GPU detected — running in CPU mode (slow)")
         except Exception:
             logging.getLogger(__name__).debug("Tray icon unavailable", exc_info=True)
 
