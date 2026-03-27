@@ -40,10 +40,21 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller web/node/corridorkey-node.spec --noconfirm
 
+      - name: Build Windows installer (Inno Setup)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Copy example config next to the spec for Inno Setup
+          Copy-Item web/node/node.env.example dist/corridorkey-node/node.env
+          # Inno Setup is pre-installed on windows-latest runners
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" web/node/installer.iss
+
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path dist/corridorkey-node/* -DestinationPath ${{ matrix.artifact }}${{ matrix.ext }}
+        run: |
+          # Upload both the installer and the raw zip
+          Compress-Archive -Path dist/corridorkey-node/* -DestinationPath ${{ matrix.artifact }}${{ matrix.ext }}
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
@@ -52,7 +63,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}${{ matrix.ext }}
+          path: |
+            ${{ matrix.artifact }}${{ matrix.ext }}
+            dist/corridorkey-node-setup.exe
 
   release:
     needs: build
@@ -70,4 +83,5 @@ jobs:
             --title "Node Agent ${{ github.ref_name }}" \
             --generate-notes \
             corridorkey-node-win-x64/corridorkey-node-win-x64.zip \
+            corridorkey-node-win-x64/dist/corridorkey-node-setup.exe \
             corridorkey-node-linux-x64/corridorkey-node-linux-x64.tar.gz
