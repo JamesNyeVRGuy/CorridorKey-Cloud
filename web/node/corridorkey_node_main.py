@@ -28,6 +28,16 @@ if __name__ == "__main__":
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
 
+    # First-run config dialog (before anything else)
+    from web.node.first_run import needs_setup, run_setup_dialog
+
+    if needs_setup():
+        if not run_setup_dialog():
+            logging.getLogger(__name__).warning(
+                "CK_MAIN_URL not set — defaulting to http://localhost:3000. "
+                "Set CK_MAIN_URL to the main machine's address."
+            )
+
     # GPU addon: detect GPU and install CUDA/ROCm torch before anything imports torch
     from web.node.gpu_addon import ensure_gpu_addon
 
