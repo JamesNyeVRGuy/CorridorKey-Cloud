@@ -23,8 +23,16 @@ from web.shared.subprocess_utils import popen_silent, run_silent
 
 logger = logging.getLogger(__name__)
 
-# Where to cache the GPU addon (next to the binary or in user home)
-_ADDON_DIR = os.path.join(os.path.expanduser("~"), ".corridorkey", "gpu_addon")
+# GPU addon directory. In frozen builds, check next to the exe first (installer
+# puts it there). Fall back to ~/.corridorkey/gpu_addon/ for portable/Linux.
+if getattr(sys, "frozen", False):
+    _EXE_ADDON = os.path.join(os.path.dirname(sys.executable), "gpu_addon")
+    if os.path.isdir(_EXE_ADDON):
+        _ADDON_DIR = _EXE_ADDON
+    else:
+        _ADDON_DIR = os.path.join(os.path.expanduser("~"), ".corridorkey", "gpu_addon")
+else:
+    _ADDON_DIR = os.path.join(os.path.expanduser("~"), ".corridorkey", "gpu_addon")
 _MARKER_FILE = os.path.join(_ADDON_DIR, ".installed")
 
 

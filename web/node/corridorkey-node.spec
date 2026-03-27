@@ -115,6 +115,12 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
+        # torch is NOT bundled — downloaded on first launch by gpu_addon.py
+        # This keeps the binary small (~200MB) and lets the GPU addon install
+        # the correct vendor-specific torch (CUDA or ROCm) at runtime.
+        "torch",
+        "torchvision",
+        "triton",
         # Web server (not needed for node agent)
         "fastapi",
         "uvicorn",

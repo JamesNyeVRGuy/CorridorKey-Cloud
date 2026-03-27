@@ -13,53 +13,27 @@ jobs:
     strategy:
       matrix:
         include:
-          # NVIDIA Windows (CUDA torch)
           - os: windows-latest
-            artifact: corridorkey-node-nvidia-win-x64
+            artifact: corridorkey-node-win-x64
             ext: .zip
-            torch_index: "https://download.pytorch.org/whl/cu128"
-            gpu_label: nvidia
-          # AMD Windows (ROCm torch from AMD's repo)
-          - os: windows-latest
-            artifact: corridorkey-node-amd-win-x64
-            ext: .zip
-            torch_index: ""
-            gpu_label: amd
-            torch_wheels: "https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torch-2.9.1+rocmsdk20260116-cp312-cp312-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torchvision-0.24.1+rocmsdk20260116-cp312-cp312-win_amd64.whl"
-          # NVIDIA Linux (CUDA torch)
           - os: ubuntu-22.04
-            artifact: corridorkey-node-nvidia-linux-x64
+            artifact: corridorkey-node-linux-x64
             ext: .tar.gz
-            torch_index: "https://download.pytorch.org/whl/cu128"
-            gpu_label: nvidia
-          # AMD Linux (ROCm torch)
-          - os: ubuntu-22.04
-            artifact: corridorkey-node-amd-linux-x64
-            ext: .tar.gz
-            torch_index: "https://download.pytorch.org/whl/rocm6.3"
-            gpu_label: amd
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.gpu_label == 'amd' && matrix.os == 'windows-latest' && '3.12' || '3.11' }}
+          python-version: "3.11"
           cache: pip
 
-      - name: Install dependencies
+      - name: Install dependencies (CPU torch — GPU torch downloaded on first launch)
         run: |
           pip install pyinstaller
+          pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cpu
           pip install -e .
           pip install sniffio httpcore h11 anyio certifi
-
-      - name: Install torch (NVIDIA/Linux AMD)
-        if: matrix.torch_index != ''
-        run: pip install torch==2.8.0 torchvision==0.23.0 --index-url ${{ matrix.torch_index }}
-
-      - name: Install torch (AMD Windows)
-        if: matrix.torch_wheels != ''
-        run: pip install --no-cache-dir --no-deps ${{ matrix.torch_wheels }}
 
       - name: Embed version info
         run: |
@@ -71,8 +45,7 @@ jobs:
         run: pyinstaller web/node/corridorkey-node.spec --noconfirm
 
       - name: Build Windows installer (Inno Setup)
-        if: runner.os == 'Windows' && matrix.gpu_label == 'nvidia'
-        # AMD Windows builds don't get an installer — use the .zip
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           # Copy example config next to the spec for Inno Setup
@@ -116,8 +89,6 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "Node Agent ${{ github.ref_name }}" \
             --generate-notes \
-            corridorkey-node-nvidia-win-x64/corridorkey-node-nvidia-win-x64.zip \
-            corridorkey-node-nvidia-win-x64/dist/corridorkey-node-setup.exe \
-            corridorkey-node-amd-win-x64/corridorkey-node-amd-win-x64.zip \
-            corridorkey-node-nvidia-linux-x64/corridorkey-node-nvidia-linux-x64.tar.gz \
-            corridorkey-node-amd-linux-x64/corridorkey-node-amd-linux-x64.tar.gz
+            corridorkey-node-win-x64/corridorkey-node-win-x64.zip \
+            corridorkey-node-win-x64/dist/corridorkey-node-setup.exe \
+            corridorkey-node-linux-x64/corridorkey-node-linux-x64.tar.gz
