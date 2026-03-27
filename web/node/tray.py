@@ -100,9 +100,11 @@ class TrayApp:
         self._server_url = ""
         self._update_available = False
         self._on_update_restart: Any = None  # callback to apply update
+        self._on_settings_window: Any = None  # callback to toggle GUI window
         self._icon: Any = None
         self._notifier: DesktopNotifier | None = None
         self._lock = threading.Lock()
+        self.gui: Any = None  # set by main to forward updates to the GUI window
 
         if HAS_NOTIFIER:
             self._notifier = DesktopNotifier(app_name="CorridorKey Node")
@@ -113,6 +115,8 @@ class TrayApp:
         with self._lock:
             self._status = status
         self._update()
+        if self.gui:
+            self.gui.update_status(status)
 
     def set_progress(self, job_id: str, current: int, total: int) -> None:
         with self._lock:
@@ -122,16 +126,23 @@ class TrayApp:
             if current > 0:
                 self._status = "working"
         self._update()
+        if self.gui and total > 0:
+            pct = int(current / total * 100)
+            self.gui.update_job(f"{current}/{total} ({pct}%)")
 
     def set_credits(self, credits: float) -> None:
         with self._lock:
             self._credits = credits
         self._update()
+        if self.gui:
+            self.gui.update_credits(credits)
 
     def set_gpu_info(self, name: str, vram_free_gb: float) -> None:
         with self._lock:
             self._gpu_name = name
             self._gpu_vram_free = vram_free_gb
+        if self.gui:
+            self.gui.update_gpu(name, vram_free_gb)
 
     def set_server_url(self, url: str) -> None:
         with self._lock:
@@ -193,6 +204,10 @@ class TrayApp:
         if url:
             webbrowser.open(url)
 
+    def _on_settings(self, icon: Any, item: Any) -> None:
+        if self._on_settings_window:
+            self._on_settings_window()
+
     def _on_update(self, icon: Any, item: Any) -> None:
         if self._on_update_restart:
             self._on_update_restart()
@@ -218,6 +233,7 @@ class TrayApp:
                 checked=lambda item: self._paused,
             ),
             pystray.MenuItem("Open Dashboard", self._on_dashboard),
+            pystray.MenuItem("Settings", self._on_settings),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", self._on_quit),
         )

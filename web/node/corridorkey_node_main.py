@@ -8,6 +8,7 @@ import multiprocessing
 import os
 import signal
 import sys
+import threading
 
 # Force PyInstaller to bundle these — they're loaded dynamically and
 # PyInstaller's static analysis doesn't find them. MUST be at module level.
@@ -84,13 +85,48 @@ if __name__ == "__main__":
     except Exception:
         logging.getLogger(__name__).debug("Auto-updater unavailable", exc_info=True)
 
+    # Create settings window (headless mode skips this)
+    gui = None
+    headless = os.environ.get("CK_NO_TRAY", "").strip().lower() in ("true", "1")
+    if not headless:
+        try:
+            from web.node.gui import NodeSettingsWindow
+
+            gui = NodeSettingsWindow(tray=tray)
+            gui.create()
+        except Exception:
+            logging.getLogger(__name__).debug("Settings window unavailable", exc_info=True)
+
+    # Wire tray ↔ GUI
+    if tray and gui:
+        tray._on_settings_window = gui.toggle
+        tray.gui = gui
+        gui.tray = tray
+
     agent = NodeAgent(tray=tray)
+
+    # Connect GUI to agent log output
+    if gui:
+        _orig_handler = logging.getLogger().handlers[0] if logging.getLogger().handlers else None
+
+        class _GUILogHandler(logging.Handler):
+            def emit(self, record):
+                try:
+                    gui.append_log(self.format(record))
+                except Exception:
+                    pass
+
+        gui_handler = _GUILogHandler()
+        gui_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
+        logging.getLogger().addHandler(gui_handler)
 
     def shutdown(signum, frame):
         if updater:
             updater.stop()
         if tray:
             tray.stop()
+        if gui:
+            gui.destroy()
         agent.stop()
         sys.exit(0)
 
@@ -98,4 +134,10 @@ if __name__ == "__main__":
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, shutdown)
 
-    agent.run()
+    # Run agent in background thread, GUI mainloop on main thread
+    if gui:
+        agent_thread = threading.Thread(target=agent.run, daemon=True, name="agent")
+        agent_thread.start()
+        gui.run()  # blocks until window is destroyed
+    else:
+        agent.run()  # headless — agent runs on main thread
