@@ -360,15 +360,30 @@
 				<!-- Step 2: Run the node -->
 				<div class="setup-step">
 					<h3 class="step-title mono">2. START THE NODE</h3>
-					<p class="step-desc">Select your GPU type and save the compose file:</p>
-
-					<div class="gpu-vendor-select">
-						<button class="vendor-btn mono" class:active={gpuVendor === 'nvidia'} onclick={() => gpuVendor = 'nvidia'}>NVIDIA</button>
-						<button class="vendor-btn mono" class:active={gpuVendor === 'amd'} onclick={() => gpuVendor = 'amd'}>AMD</button>
-					</div>
 
 					<div class="code-block">
-						<span class="code-label mono">Docker Compose (save as docker-compose.yml)</span>
+						<span class="code-label mono">Standalone Binary (Windows & Linux — no Docker needed)</span>
+						<div class="download-links">
+							<a href="https://github.com/JamesNyeVRGuy/CorridorKey/releases/latest" target="_blank" rel="noopener" class="download-btn mono">
+								<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1v9M4 7l4 4 4-4M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+								DOWNLOAD LATEST
+							</a>
+							<p class="download-hint">Download the installer, paste your token on first launch. Auto-detects your GPU (NVIDIA or AMD).</p>
+						</div>
+					</div>
+
+					<details class="docker-details">
+						<summary class="docker-summary mono">Docker Compose (advanced)</summary>
+
+						<p class="step-desc" style="margin-top: var(--sp-3);">Select your GPU type:</p>
+
+						<div class="gpu-vendor-select">
+							<button class="vendor-btn mono" class:active={gpuVendor === 'nvidia'} onclick={() => gpuVendor = 'nvidia'}>NVIDIA</button>
+							<button class="vendor-btn mono" class:active={gpuVendor === 'amd'} onclick={() => gpuVendor = 'amd'}>AMD</button>
+						</div>
+
+						<div class="code-block">
+							<span class="code-label mono">Save as docker-compose.yml</span>
 						{#if gpuVendor === 'nvidia'}
 						<pre class="code mono">services:
   corridorkey-node:
@@ -451,18 +466,8 @@ volumes:
   ck-compile-cache:</pre>
 						{/if}
 						<p class="code-hint mono">docker compose up -d</p>
-					</div>
-
-					<div class="code-block" style="margin-top: var(--sp-4);">
-						<span class="code-label mono">Or: Standalone Binary (no Docker needed)</span>
-						<div class="download-links">
-							<a href="https://github.com/JamesNyeVRGuy/CorridorKey/releases/latest" target="_blank" rel="noopener" class="download-btn mono">
-								<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1v9M4 7l4 4 4-4M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-								DOWNLOAD LATEST
-							</a>
-							<p class="download-hint">Windows installer (.exe) and Linux binary (.tar.gz). Paste your token on first launch.</p>
 						</div>
-					</div>
+					</details>
 				</div>
 
 				<!-- Active Tokens -->
@@ -1774,6 +1779,17 @@ volumes:
 		background: var(--accent-muted); border-color: var(--accent);
 		color: var(--accent); font-weight: 600;
 	}
+	.docker-details {
+		margin-top: var(--sp-4);
+		border: 1px solid var(--border); border-radius: var(--radius-sm);
+		padding: var(--sp-3);
+	}
+	.docker-summary {
+		font-size: 10px; letter-spacing: 0.08em; color: var(--text-tertiary);
+		cursor: pointer; user-select: none;
+	}
+	.docker-summary:hover { color: var(--text-secondary); }
+	.docker-details[open] .docker-summary { color: var(--text-secondary); margin-bottom: var(--sp-2); }
 	.download-links {
 		padding: var(--sp-3); background: var(--surface-0);
 		border: 1px solid var(--border); border-radius: var(--radius-sm);
