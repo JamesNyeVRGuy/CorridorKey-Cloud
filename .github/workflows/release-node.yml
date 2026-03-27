@@ -33,6 +33,7 @@ jobs:
           pip install pyinstaller
           pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cpu
           pip install -e .  # all deps including httpx, pystray, etc.
+          pip install sniffio httpcore h11 anyio certifi  # ensure httpx transitive deps are present
 
       - name: Embed version info
         run: |
@@ -49,6 +50,9 @@ jobs:
         run: |
           # Copy example config next to the spec for Inno Setup
           Copy-Item web/node/node.env.example dist/corridorkey-node/node.env
+          # Set version from tag (node-v0.0.1 → 0.0.1)
+          $version = "${{ github.ref_name }}" -replace '^node-v','' -replace '^cloud.*','0.0.0-dev'
+          (Get-Content web/node/installer.iss) -replace '#define MyAppVersion "1.0.0"', "#define MyAppVersion `"$version`"" | Set-Content web/node/installer.iss
           # Inno Setup is pre-installed on windows-latest runners
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" web/node/installer.iss
 
