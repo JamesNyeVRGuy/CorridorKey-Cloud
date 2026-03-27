@@ -123,6 +123,32 @@ a = Analysis(
     optimize=0,
 )
 
+# Strip model weights — they're downloaded at runtime by weight_sync.py.
+# These patterns match the multi-GB checkpoint/weight files that PyInstaller
+# pulls in from the source tree.
+_weight_patterns = [
+    "checkpoints",
+    "weights",
+    ".pth",
+    ".safetensors",
+    ".ckpt",
+    ".bin",
+    "diffusion_pytorch_model",
+    "dino_projection_mlp",
+]
+a.datas = [
+    (name, path, typ)
+    for name, path, typ in a.datas
+    if not any(p in name for p in _weight_patterns)
+]
+
+# Also strip onnxruntime if it got pulled in (not needed for inference)
+a.binaries = [
+    (name, path, typ)
+    for name, path, typ in a.binaries
+    if "onnxruntime" not in name
+]
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
