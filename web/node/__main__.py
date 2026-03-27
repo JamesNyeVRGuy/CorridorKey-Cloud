@@ -48,6 +48,8 @@ def _security_checks() -> None:
 
 
 def main() -> None:
+    import os
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
@@ -61,9 +63,22 @@ def main() -> None:
             "CK_MAIN_URL not set — defaulting to http://localhost:3000. Set CK_MAIN_URL to the main machine's address."
         )
 
-    agent = NodeAgent()
+    # Start tray icon if not explicitly disabled (e.g., Docker headless)
+    tray = None
+    if os.environ.get("CK_NO_TRAY", "").strip().lower() not in ("true", "1"):
+        try:
+            from .tray import TrayApp
+
+            tray = TrayApp()
+            tray.start()
+        except Exception:
+            logging.getLogger(__name__).debug("Tray icon unavailable", exc_info=True)
+
+    agent = NodeAgent(tray=tray)
 
     def shutdown(signum, frame):
+        if tray:
+            tray.stop()
         agent.stop()
         sys.exit(0)
 
