@@ -9,15 +9,21 @@ import os
 import signal
 import sys
 
-# Force PyInstaller to bundle these — they're loaded dynamically by httpx/anyio
-# and PyInstaller's static analysis doesn't find them. These MUST be at module
-# level (not inside if __name__ == "__main__") or PyInstaller won't see them.
-import anyio  # noqa: F401
-import certifi  # noqa: F401
-import h11  # noqa: F401
-import httpcore  # noqa: F401
-import httpx  # noqa: F401
-import sniffio  # noqa: F401
+# Force PyInstaller to bundle these — they're loaded dynamically and
+# PyInstaller's static analysis doesn't find them. MUST be at module level.
+import anyio  # noqa: F401 — httpx → anyio
+import certifi  # noqa: F401 — httpx SSL certs
+import dotenv  # noqa: F401 — config.py loads .env files
+import h11  # noqa: F401 — httpx HTTP/1.1
+import httpcore  # noqa: F401 — httpx transport
+import httpx  # noqa: F401 — node agent HTTP client
+import sniffio  # noqa: F401 — anyio backend detection
+
+try:
+    import desktop_notifier  # noqa: F401 — tray notifications (optional)
+    import pystray  # noqa: F401 — system tray icon (optional)
+except ImportError:
+    pass  # optional — tray degrades gracefully
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
