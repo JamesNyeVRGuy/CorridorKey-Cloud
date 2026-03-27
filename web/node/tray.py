@@ -67,6 +67,8 @@ class TrayApp:
         self._progress_total = 0
         self._paused = False
         self._server_url = ""
+        self._update_available = False
+        self._on_update_restart: Any = None  # callback to apply update
         self._icon: Any = None
         self._notifier: DesktopNotifier | None = None
         self._lock = threading.Lock()
@@ -103,6 +105,12 @@ class TrayApp:
     def set_server_url(self, url: str) -> None:
         with self._lock:
             self._server_url = url
+
+    def set_update_available(self, on_restart_callback: Any) -> None:
+        with self._lock:
+            self._update_available = True
+            self._on_update_restart = on_restart_callback
+        self._update()
 
     def job_completed(self, job_id: str, credits_earned: float) -> None:
         with self._lock:
@@ -154,12 +162,21 @@ class TrayApp:
         if url:
             webbrowser.open(url)
 
+    def _on_update(self, icon: Any, item: Any) -> None:
+        if self._on_update_restart:
+            self._on_update_restart()
+
     def _on_quit(self, icon: Any, item: Any) -> None:
         if self._icon:
             self._icon.stop()
 
     def _build_menu(self) -> pystray.Menu:
         return pystray.Menu(
+            pystray.MenuItem(
+                "Update & Restart",
+                self._on_update,
+                visible=lambda item: self._update_available,
+            ),
             pystray.MenuItem(self._status_text, None, enabled=False),
             pystray.MenuItem(self._credits_text, None, enabled=False),
             pystray.MenuItem(self._gpu_text, None, enabled=False),

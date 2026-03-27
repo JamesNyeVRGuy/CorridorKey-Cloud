@@ -74,9 +74,21 @@ def main() -> None:
         except Exception:
             logging.getLogger(__name__).debug("Tray icon unavailable", exc_info=True)
 
+    # Start auto-updater (only active in frozen/PyInstaller builds)
+    updater = None
+    try:
+        from .updater import UpdateChecker
+
+        updater = UpdateChecker(tray=tray)
+        updater.start()
+    except Exception:
+        logging.getLogger(__name__).debug("Auto-updater unavailable", exc_info=True)
+
     agent = NodeAgent(tray=tray)
 
     def shutdown(signum, frame):
+        if updater:
+            updater.stop()
         if tray:
             tray.stop()
         agent.stop()
