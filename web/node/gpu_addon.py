@@ -121,12 +121,18 @@ def install_addon(vendor: str, on_progress=None) -> bool:
         on_progress(msg)
 
     try:
-        # Install GPU torch over the CPU version
-        cmd = [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
+        # Find pip — can't use sys.executable in frozen builds (it's the .exe itself)
+        import shutil
+
+        pip_exe = shutil.which("pip3") or shutil.which("pip")
+        if pip_exe:
+            cmd = [pip_exe, "install"]
+        else:
+            # Fallback: download wheels directly via httpx (no pip needed)
+            logger.info("pip not found — downloading wheels directly")
+            return _download_wheels_direct(vendor, index_url, packages, on_progress)
+
+        cmd += [
             "--force-reinstall",
             "--no-deps",
             "--target",
@@ -180,6 +186,75 @@ def install_addon(vendor: str, on_progress=None) -> bool:
     except Exception:
         logger.error("GPU addon install error", exc_info=True)
         return False
+
+
+def _download_wheels_direct(vendor: str, index_url: str, packages: list[str], on_progress=None) -> bool:
+    """Download torch wheels directly via httpx when pip isn't available.
+
+    Downloads the .whl files and extracts them into the addon directory.
+    """
+    import zipfile
+
+    import httpx
+
+    os.makedirs(_ADDON_DIR, exist_ok=True)
+    label = "CUDA" if vendor == "nvidia" else "ROCm"
+
+    # Determine platform tag for wheel filename
+    if platform.system() == "Windows":
+        plat = "win_amd64"
+    else:
+        plat = "manylinux1_x86_64"
+
+    py_tag = f"cp{sys.version_info.major}{sys.version_info.minor}"
+
+    for pkg in packages:
+        name, version = pkg.split("==")
+        # Construct wheel URL (PyTorch index uses specific naming)
+        # e.g., https://download.pytorch.org/whl/cu128/torch-2.8.0+cu128-cp311-cp311-win_amd64.whl
+        suffix = index_url.rstrip("/").split("/")[-1]  # e.g., "cu128" or "rocm6.3"
+        wheel_name = f"{name}-{version}+{suffix}-{py_tag}-{py_tag}-{plat}.whl"
+        wheel_url = f"{index_url}/{name}/{wheel_name}"
+
+        dest = os.path.join(_ADDON_DIR, wheel_name)
+        logger.info("Downloading %s...", wheel_name)
+        if on_progress:
+            on_progress(f"Downloading {name} ({label})...")
+
+        try:
+            with httpx.stream("GET", wheel_url, timeout=300, follow_redirects=True) as r:
+                if r.status_code != 200:
+                    logger.error("Failed to download %s: HTTP %d", wheel_url, r.status_code)
+                    return False
+                total = int(r.headers.get("content-length", 0))
+                downloaded = 0
+                with open(dest, "wb") as f:
+                    for chunk in r.iter_bytes(chunk_size=1024 * 1024):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total > 0 and on_progress:
+                            pct = int(downloaded / total * 100)
+                            on_progress(f"Downloading {name}: {pct}% ({downloaded // (1024 * 1024)}MB)")
+
+            # Extract wheel (it's a zip file)
+            logger.info("Extracting %s...", wheel_name)
+            with zipfile.ZipFile(dest, "r") as z:
+                z.extractall(_ADDON_DIR)
+            os.remove(dest)
+
+        except Exception:
+            logger.error("Failed to download %s", wheel_name, exc_info=True)
+            return False
+
+    # Write marker
+    with open(_MARKER_FILE, "w") as f:
+        f.write(f"{vendor}\n")
+
+    msg = f"{label} GPU acceleration installed successfully!"
+    logger.info(msg)
+    if on_progress:
+        on_progress(msg)
+    return True
 
 
 def ensure_gpu_addon() -> str | None:
