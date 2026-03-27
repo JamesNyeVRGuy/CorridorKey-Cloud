@@ -183,7 +183,10 @@ class CorridorKeyEngine:
             # on large graphs — pytorch/pytorch#155720).
             compile_mode = "default"
         else:
-            compile_mode = "max-autotune"
+            # max-autotune-no-cudagraphs: CUDA graphs crash in threaded workers
+            # (AssertionError in cudagraph_trees.py — thread-local state not
+            # initialized when inference runs in a different thread than compile).
+            compile_mode = "max-autotune-no-cudagraphs"
 
         try:
             if self._is_rocm:
