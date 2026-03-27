@@ -136,8 +136,8 @@ def install_addon(vendor: str, on_progress=None) -> bool:
             *packages,
         ]
 
-        logger.info("Running: %s", " ".join(cmd))
-        # Stream pip output live so users see download progress
+        logger.debug("Running: %s", " ".join(cmd))
+        # Stream pip output, only log meaningful lines (download progress, errors)
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -147,8 +147,13 @@ def install_addon(vendor: str, on_progress=None) -> bool:
         )
         for line in proc.stdout:
             line = line.rstrip()
-            if line:
-                logger.info("[pip] %s", line)
+            if not line:
+                continue
+            # Show download progress and key status lines
+            if "Downloading" in line or "━" in line or "ERROR" in line or "Successfully" in line:
+                logger.info("[gpu-addon] %s", line)
+            else:
+                logger.debug("[gpu-addon] %s", line)
         proc.wait(timeout=600)
 
         if proc.returncode != 0:
