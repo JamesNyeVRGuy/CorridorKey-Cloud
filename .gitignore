@@ -65,3 +65,5 @@ BiRefNetModule/checkpoints/*
 
 site
 .hypothesis
+dist
+build
