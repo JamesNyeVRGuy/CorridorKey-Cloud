@@ -13,25 +13,32 @@ jobs:
     strategy:
       matrix:
         include:
+          # Windows NVIDIA (CUDA torch ~800MB wheel, binary ~1.5GB)
           - os: windows-latest
-            artifact: corridorkey-node-win-x64
+            artifact: corridorkey-node-nvidia-win-x64
             ext: .zip
-          - os: ubuntu-22.04
-            artifact: corridorkey-node-linux-x64
-            ext: .tar.gz
+            torch_cmd: "pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128"
+            python_version: "3.11"
+          # Windows AMD (ROCm torch from AMD, binary ~1GB)
+          - os: windows-latest
+            artifact: corridorkey-node-amd-win-x64
+            ext: .zip
+            torch_cmd: "pip install --no-cache-dir --no-deps https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torch-2.9.1+rocmsdk20260116-cp312-cp312-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torchvision-0.24.1+rocmsdk20260116-cp312-cp312-win_amd64.whl"
+            python_version: "3.12"
+          # Linux users should use Docker (corridorkey-node:nvidia or :amd)
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python_version }}
           cache: pip
 
-      - name: Install dependencies (CPU torch — GPU torch downloaded on first launch)
+      - name: Install dependencies
         run: |
           pip install pyinstaller
-          pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cpu
+          ${{ matrix.torch_cmd }}
           pip install -e .
           pip install sniffio httpcore h11 anyio certifi
 
@@ -45,7 +52,7 @@ jobs:
         run: pyinstaller web/node/corridorkey-node.spec --noconfirm
 
       - name: Build Windows installer (Inno Setup)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && contains(matrix.artifact, 'nvidia')
         shell: pwsh
         run: |
           # Copy example config next to the spec for Inno Setup
@@ -89,6 +96,6 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "Node Agent ${{ github.ref_name }}" \
             --generate-notes \
-            corridorkey-node-win-x64/corridorkey-node-win-x64.zip \
-            corridorkey-node-win-x64/dist/corridorkey-node-setup.exe \
-            corridorkey-node-linux-x64/corridorkey-node-linux-x64.tar.gz
+            corridorkey-node-nvidia-win-x64/corridorkey-node-nvidia-win-x64.zip \
+            corridorkey-node-nvidia-win-x64/dist/corridorkey-node-setup.exe \
+            corridorkey-node-amd-win-x64/corridorkey-node-amd-win-x64.zip
