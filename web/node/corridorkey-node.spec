@@ -144,7 +144,7 @@ a = Analysis(
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(ROOT / "web" / "node" / "pyi_rth_rocm.py")],
     excludes=[
         # Web server (not needed for node agent)
         "fastapi",
