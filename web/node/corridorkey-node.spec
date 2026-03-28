@@ -31,14 +31,36 @@ _hidden = (
     + collect_submodules("certifi")
 )
 
-# Collect torch DLLs that PyInstaller's hook misses (HIP/ROCm, triton)
+# Collect HIP/ROCm DLLs that PyInstaller's hook misses.
+# These live in rocm_sdk_core/ and rocm_sdk_libraries_custom/, not torch/lib/.
 import glob as _glob
+import importlib
 
-_torch_lib = os.path.join(os.path.dirname(__import__('torch').__file__), 'lib')
 _extra_binaries = []
-for pattern in ['*hip*', '*rocm*', '*miopen*', '*hiprtc*', '*amdhip*', '*rocsolver*', '*rocblas*', '*hipblas*', '*hsa*']:
+_hip_patterns = ['*hip*', '*rocm*', '*miopen*', '*hiprtc*', '*amdhip*', '*rocsolver*',
+                 '*rocblas*', '*hipblas*', '*hsa*', '*amd_comgr*', '*rocfft*', '*rocsparse*',
+                 'c10_hip*', 'torch_hip*']
+
+# Search torch/lib
+_torch_lib = os.path.join(os.path.dirname(__import__('torch').__file__), 'lib')
+for pattern in _hip_patterns:
     for f in _glob.glob(os.path.join(_torch_lib, pattern)):
         _extra_binaries.append((f, 'torch/lib'))
+
+# Search rocm SDK packages (rocm_sdk_core, rocm_sdk_libraries_custom, etc.)
+for pkg_name in ['rocm_sdk_core', 'rocm_sdk_libraries_custom', 'rocm_sdk_devel']:
+    try:
+        pkg = importlib.import_module(pkg_name)
+        pkg_dir = os.path.dirname(pkg.__file__)
+        for f in _glob.glob(os.path.join(pkg_dir, '**', '*.dll'), recursive=True):
+            _extra_binaries.append((f, 'torch/lib'))
+        for f in _glob.glob(os.path.join(pkg_dir, '**', '*.so'), recursive=True):
+            _extra_binaries.append((f, 'torch/lib'))
+    except ImportError:
+        pass
+
+if _extra_binaries:
+    print(f"[corridorkey-node.spec] Collected {len(_extra_binaries)} extra HIP/ROCm binaries")
 
 a = Analysis(
     [str(ROOT / "web" / "node" / "corridorkey_node_main.py")],
