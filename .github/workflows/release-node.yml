@@ -55,7 +55,7 @@ jobs:
       - name: Install AMD ROCm torch (overwrites CPU/CUDA torch from pip install -e .)
         if: contains(matrix.artifact, 'amd')
         run: |
-          pip install --no-cache-dir https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm_sdk_core-7.2.0.dev0-py3-none-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm_sdk_libraries_custom-7.2.0.dev0-py3-none-win_amd64.whl
+          pip install --no-cache-dir https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm-7.2.0.dev0.tar.gz https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm_sdk_core-7.2.0.dev0-py3-none-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm_sdk_libraries_custom-7.2.0.dev0-py3-none-win_amd64.whl
           pip install --no-cache-dir --force-reinstall --no-deps https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torch-2.9.1+rocmsdk20260116-cp312-cp312-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torchvision-0.24.1+rocmsdk20260116-cp312-cp312-win_amd64.whl
           python -c "import torch; print('torch version:', torch.__version__); print('HIP:', torch.version.hip); import os; dlls=[f for f in os.listdir(os.path.join(os.path.dirname(torch.__file__), 'lib')) if f.endswith('.dll')]; print('DLLs:', dlls)"
 
