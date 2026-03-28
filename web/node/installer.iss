@@ -28,8 +28,8 @@ SetupIconFile=icon.ico
 UninstallDisplayIcon={app}\corridorkey-node.exe
 OutputBaseFilename=corridorkey-node-setup
 OutputDir=..\..\dist
-Compression=lzma2/ultra64
-SolidCompression=yes
+Compression=lzma2/fast
+SolidCompression=no
 SetupLogging=yes
 PrivilegesRequired=lowest
 ; No admin needed — installs to user's AppData

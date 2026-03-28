@@ -23,7 +23,7 @@ jobs:
           - os: windows-latest
             artifact: corridorkey-node-amd-win-x64
             ext: .zip
-            torch_cmd: "pip install --no-cache-dir --no-deps https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torch-2.9.1+rocmsdk20260116-cp312-cp312-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torchvision-0.24.1+rocmsdk20260116-cp312-cp312-win_amd64.whl"
+            torch_cmd: "pip install --no-cache-dir https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm_sdk_core-7.2.0.dev0-py3-none-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm_sdk_libraries_custom-7.2.0.dev0-py3-none-win_amd64.whl && pip install --no-cache-dir --no-deps https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torch-2.9.1+rocmsdk20260116-cp312-cp312-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torchvision-0.24.1+rocmsdk20260116-cp312-cp312-win_amd64.whl"
             python_version: "3.12"
           # Linux users should use Docker (corridorkey-node:nvidia or :amd)
     runs-on: ${{ matrix.os }}
@@ -34,6 +34,16 @@ jobs:
         with:
           python-version: ${{ matrix.python_version }}
           cache: pip
+
+      - name: Cache pip + PyInstaller
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\pip\Cache
+            ~/.cache/pip
+            build/
+          key: pyinstaller-${{ matrix.artifact }}-${{ hashFiles('pyproject.toml', 'web/node/corridorkey-node.spec') }}
+          restore-keys: pyinstaller-${{ matrix.artifact }}-
 
       - name: Install dependencies
         run: |
