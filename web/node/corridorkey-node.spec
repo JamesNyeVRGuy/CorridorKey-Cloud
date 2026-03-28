@@ -31,24 +31,18 @@ _hidden = (
     + collect_submodules("certifi")
 )
 
-# Collect HIP/ROCm DLLs that PyInstaller's hook misses.
-# These live in rocm_sdk_core/ and rocm_sdk_libraries_custom/, not torch/lib/.
+# Collect HIP/ROCm DLLs that PyInstaller's binary analysis misses.
+# The DLLs live in _rocm_sdk_core/bin/ and _rocm_sdk_libraries_custom/bin/
+# (note the underscore prefix — the non-prefixed packages are just Python wrappers).
+# We copy them into torch/lib/ so they're on the DLL search path at runtime.
 import glob as _glob
 import importlib
 
 _extra_binaries = []
-_hip_patterns = ['*hip*', '*rocm*', '*miopen*', '*hiprtc*', '*amdhip*', '*rocsolver*',
-                 '*rocblas*', '*hipblas*', '*hsa*', '*amd_comgr*', '*rocfft*', '*rocsparse*',
-                 'c10_hip*', 'torch_hip*']
 
-# Search torch/lib
-_torch_lib = os.path.join(os.path.dirname(__import__('torch').__file__), 'lib')
-for pattern in _hip_patterns:
-    for f in _glob.glob(os.path.join(_torch_lib, pattern)):
-        _extra_binaries.append((f, 'torch/lib'))
-
-# Search rocm SDK packages (rocm_sdk_core, rocm_sdk_libraries_custom, etc.)
-for pkg_name in ['rocm_sdk_core', 'rocm_sdk_libraries_custom', 'rocm_sdk_devel']:
+# Search rocm SDK native packages for DLLs.
+# These are the packages that contain the actual HIP/ROCm runtime libraries.
+for pkg_name in ['_rocm_sdk_core', '_rocm_sdk_libraries_custom']:
     try:
         pkg = importlib.import_module(pkg_name)
         pkg_dir = os.path.dirname(pkg.__file__)
@@ -61,6 +55,8 @@ for pkg_name in ['rocm_sdk_core', 'rocm_sdk_libraries_custom', 'rocm_sdk_devel']
 
 if _extra_binaries:
     print(f"[corridorkey-node.spec] Collected {len(_extra_binaries)} extra HIP/ROCm binaries")
+else:
+    print("[corridorkey-node.spec] No ROCm packages found (NVIDIA or CPU build)")
 
 a = Analysis(
     [str(ROOT / "web" / "node" / "corridorkey_node_main.py")],
@@ -141,6 +137,9 @@ a = Analysis(
         # pystray backends (platform-specific, detected at runtime)
         *(["pystray._win32"] if sys.platform == "win32" else []),
         *(["pystray._appindicator", "pystray._xorg"] if sys.platform == "linux" else []),
+        # ROCm SDK (runtime hook patches find_libraries, needs _dist_info for DLL patterns)
+        "rocm_sdk",
+        "rocm_sdk._dist_info",
     ],
     hookspath=[],
     hooksconfig={},
