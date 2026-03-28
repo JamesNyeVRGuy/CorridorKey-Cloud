@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import sys
 from dataclasses import dataclass
 from subprocess import TimeoutExpired
 
@@ -154,10 +155,43 @@ def _enumerate_nvidia() -> list[GPUInfo] | None:
         return None
 
 
+def _enumerate_amd_windows() -> list[GPUInfo] | None:
+    """Enumerate AMD GPUs on Windows via PowerShell/WMI. Returns None if unavailable."""
+    if sys.platform != "win32":
+        return None
+    try:
+        result = subprocess_run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "Get-CimInstance Win32_VideoController | Where-Object { $_.Name -match 'AMD|Radeon' } | "
+                "Select-Object Name, AdapterRAM | ConvertTo-Json -Compress",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+        data = json.loads(result.stdout)
+        if isinstance(data, dict):
+            data = [data]
+        gpus: list[GPUInfo] = []
+        for i, gpu in enumerate(data):
+            name = gpu.get("Name", f"AMD GPU {i}")
+            adapter_ram = gpu.get("AdapterRAM", 0)
+            total_gb = float(adapter_ram) / (1024**3) if adapter_ram else 0
+            gpus.append(GPUInfo(index=i, name=name, vram_total_gb=total_gb, vram_free_gb=total_gb))
+        return gpus if gpus else None
+    except (FileNotFoundError, TimeoutExpired, json.JSONDecodeError):
+        return None
+
+
 def _enumerate_amd() -> list[GPUInfo] | None:
     """Enumerate AMD GPUs via amd-smi (ROCm). Returns None if unavailable.
 
-    Tries amd-smi first (modern), then rocm-smi (legacy).
+    Tries amd-smi first (modern), then rocm-smi (legacy), then Windows WMI.
     """
     # Try amd-smi (ROCm 6.0+)
     try:
@@ -231,7 +265,8 @@ def _enumerate_amd() -> list[GPUInfo] | None:
     except (FileNotFoundError, TimeoutExpired):
         pass
 
-    return None
+    # Windows: no amd-smi/rocm-smi, fall back to WMI
+    return _enumerate_amd_windows()
 
 
 def enumerate_gpus() -> list[GPUInfo]:
@@ -252,20 +287,25 @@ def enumerate_gpus() -> list[GPUInfo]:
         return gpus
 
     # Fallback to torch (works for both NVIDIA and ROCm via HIP)
-    if torch.cuda.is_available():
-        fallback: list[GPUInfo] = []
-        for i in range(torch.cuda.device_count()):
-            props = torch.cuda.get_device_properties(i)
-            total = props.total_memory / (1024**3)
-            fallback.append(
-                GPUInfo(
-                    index=i,
-                    name=props.name,
-                    vram_total_gb=total,
-                    vram_free_gb=total,  # can't query free without setting device
+    try:
+        if torch.cuda.is_available():
+            fallback: list[GPUInfo] = []
+            for i in range(torch.cuda.device_count()):
+                props = torch.cuda.get_device_properties(i)
+                total = props.total_memory / (1024**3)
+                fallback.append(
+                    GPUInfo(
+                        index=i,
+                        name=props.name,
+                        vram_total_gb=total,
+                        vram_free_gb=total,  # can't query free without setting device
+                    )
                 )
-            )
-        return fallback
+            return fallback
+    except RuntimeError:
+        # AMD torch ships caffe2_nvrtc.dll (NVIDIA) which crashes on AMD-only machines.
+        # _lazy_init() fails with LoadLibrary error — fall through to empty list.
+        logger.debug("torch.cuda init failed (caffe2_nvrtc?), falling through", exc_info=True)
 
     return []
 
