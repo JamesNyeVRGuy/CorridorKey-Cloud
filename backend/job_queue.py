@@ -87,6 +87,54 @@ class GPUJob:
         if self._cancel_requested:
             raise JobCancelledError(self.clip_name, self.current_frame)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dict for Redis/JSON storage. Lossless round-trip with from_dict()."""
+        return {
+            "id": self.id,
+            "job_type": self.job_type.value,
+            "clip_name": self.clip_name,
+            "params": self.params,
+            "status": self.status.value,
+            "error_message": self.error_message,
+            "claimed_by": self.claimed_by,
+            "preferred_node": self.preferred_node,
+            "submitted_by": self.submitted_by,
+            "org_id": self.org_id,
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+            "priority": self.priority,
+            "shard_group": self.shard_group,
+            "shard_index": self.shard_index,
+            "shard_total": self.shard_total,
+            "current_frame": self.current_frame,
+            "total_frames": self.total_frames,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> GPUJob:
+        """Reconstruct a GPUJob from a dict. Inverse of to_dict()."""
+        job = cls(
+            job_type=JobType(d["job_type"]),
+            clip_name=d["clip_name"],
+            params=d.get("params", {}),
+        )
+        job.id = d["id"]
+        job.status = JobStatus(d["status"])
+        job.error_message = d.get("error_message")
+        job.claimed_by = d.get("claimed_by")
+        job.preferred_node = d.get("preferred_node")
+        job.submitted_by = d.get("submitted_by")
+        job.org_id = d.get("org_id")
+        job.started_at = d.get("started_at", 0)
+        job.completed_at = d.get("completed_at", 0)
+        job.priority = d.get("priority", 0)
+        job.shard_group = d.get("shard_group")
+        job.shard_index = d.get("shard_index", 0)
+        job.shard_total = d.get("shard_total", 1)
+        job.current_frame = d.get("current_frame", 0)
+        job.total_frames = d.get("total_frames", 0)
+        return job
+
 
 # Callback type aliases
 ProgressCallback = Callable[[str, int, int], None]  # clip_name, current, total

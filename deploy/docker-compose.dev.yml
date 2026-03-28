@@ -108,6 +108,22 @@ services:
       PG_META_DB_USER: supabase_admin
       PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
 
+  # ─── Redis (shared state for multi-instance) ─────────────────────
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ─── CorridorKey Web Server ──────────────────────────────────────
 
   corridorkey-web:
@@ -160,6 +176,7 @@ services:
       - CK_S3_REGION=${CK_S3_REGION:-us-east-1}
       - CK_S3_ACCESS_KEY_ID=${CK_S3_ACCESS_KEY_ID:-}
       - CK_S3_SECRET_ACCESS_KEY=${CK_S3_SECRET_ACCESS_KEY:-}
+      - CK_REDIS_URL=${CK_REDIS_URL:-redis://redis:6379/0}
     volumes:
       - ${CK_PROJECTS_DIR:-./Projects}:/app/Projects
       - ${CK_WEIGHTS_DIR:-./weights}/corridorkey:/app/CorridorKeyModule/checkpoints
@@ -168,3 +185,4 @@ services:
 
 volumes:
   supabase-db-data:
+  redis-data:

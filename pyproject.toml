@@ -65,6 +65,7 @@ web = [
     "sentry-sdk[fastapi]>=2.0",
     "psycopg2-binary>=2.9",
     "alembic>=1.13",
+    "redis[hiredis]>=5.0",
 ]
 rocm = [
     "torch==2.8.0",
@@ -76,7 +77,7 @@ s3 = [
 ]
 
 [dependency-groups]
-dev = ["pytest", "pytest-cov", "ruff", "hypothesis"]
+dev = ["pytest", "pytest-cov", "ruff", "hypothesis", "fakeredis[lua]"]
 docs = ["zensical>=0.0.24"]
 
 [project.scripts]
