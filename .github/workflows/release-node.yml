@@ -88,34 +88,43 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
 
-      - name: Install HuggingFace CLI
+      - name: Install HuggingFace SDK
         run: pip install huggingface-hub
 
       - name: Upload to HuggingFace
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          VERSION="${{ github.ref_name }}"
+          python - << 'PYEOF'
+          import os
+          from huggingface_hub import HfApi
 
-          # Upload each artifact (zip + installer) to versioned and latest paths
-          for variant in nvidia amd; do
-            dir="corridorkey-node-${variant}-win-x64"
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          repo_id = "JamesNyeVRGuy/corridorkey-node"
+          version = os.environ.get("GITHUB_REF_NAME", "dev")
 
-            # Zip
-            huggingface-cli upload JamesNyeVRGuy/corridorkey-node \
-              "${dir}/${dir}.zip" \
-              "${VERSION}/${dir}.zip"
-            huggingface-cli upload JamesNyeVRGuy/corridorkey-node \
-              "${dir}/${dir}.zip" \
-              "latest/${dir}.zip"
+          for variant in ["nvidia", "amd"]:
+              d = f"corridorkey-node-{variant}-win-x64"
 
-            # Installer
-            if [ -f "${dir}/dist/corridorkey-node-setup.exe" ]; then
-              huggingface-cli upload JamesNyeVRGuy/corridorkey-node \
-                "${dir}/dist/corridorkey-node-setup.exe" \
-                "${VERSION}/corridorkey-node-${variant}-setup.exe"
-              huggingface-cli upload JamesNyeVRGuy/corridorkey-node \
-                "${dir}/dist/corridorkey-node-setup.exe" \
-                "latest/corridorkey-node-${variant}-setup.exe"
-            fi
-          done
+              # Upload zip
+              zip_path = f"{d}/{d}.zip"
+              if os.path.isfile(zip_path):
+                  for prefix in [version, "latest"]:
+                      api.upload_file(
+                          path_or_fileobj=zip_path,
+                          path_in_repo=f"{prefix}/{d}.zip",
+                          repo_id=repo_id,
+                      )
+                      print(f"Uploaded {zip_path} -> {prefix}/{d}.zip")
+
+              # Upload installer
+              exe_path = f"{d}/dist/corridorkey-node-setup.exe"
+              if os.path.isfile(exe_path):
+                  for prefix in [version, "latest"]:
+                      api.upload_file(
+                          path_or_fileobj=exe_path,
+                          path_in_repo=f"{prefix}/corridorkey-node-{variant}-setup.exe",
+                          repo_id=repo_id,
+                      )
+                      print(f"Uploaded {exe_path} -> {prefix}/corridorkey-node-{variant}-setup.exe")
+          PYEOF
