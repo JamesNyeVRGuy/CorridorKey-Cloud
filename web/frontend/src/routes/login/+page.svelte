@@ -40,7 +40,10 @@
 <div class="auth-page">
 	<div class="auth-card">
 		<img src="/Corridor_Digital_Logo.svg" alt="Corridor Digital" class="auth-logo" />
-		<h1 class="auth-title mono">CORRIDORKEY</h1>
+		<div class="logo-row">
+			<h1 class="auth-title mono">CORRIDORKEY</h1>
+			<span class="beta-badge mono">BETA</span>
+		</div>
 		<p class="auth-subtitle">Sign in to your account</p>
 
 		{#if error}
@@ -91,7 +94,17 @@
 	}
 
 	.auth-logo { width: 120px; filter: drop-shadow(0 0 4px rgba(255, 242, 3, 0.15)); }
+	.logo-row { display: flex; align-items: center; gap: var(--sp-2); }
 	.auth-title { font-size: 11px; letter-spacing: 0.2em; color: var(--text-tertiary); }
+	.beta-badge {
+		font-size: 9px;
+		letter-spacing: 0.1em;
+		padding: 2px 6px;
+		border-radius: 4px;
+		background: rgba(255, 242, 3, 0.12);
+		color: var(--accent);
+		border: 1px solid rgba(255, 242, 3, 0.2);
+	}
 	.auth-subtitle { font-size: 14px; color: var(--text-secondary); margin-top: calc(-1 * var(--sp-2)); }
 
 	.auth-error {

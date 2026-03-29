@@ -340,6 +340,14 @@
 									{#if pu.name}
 										<span class="pending-name mono">{pu.email}</span>
 									{/if}
+									{#if pu.company || pu.role}
+										<span class="pending-profile mono">
+											{[pu.company, pu.role].filter(Boolean).join(' · ')}
+										</span>
+									{/if}
+									{#if pu.use_case}
+										<span class="pending-usecase">{pu.use_case}</span>
+									{/if}
 									<span class="pending-date mono">{formatDate(pu.signed_up_at)}</span>
 								</div>
 								<div class="pending-actions">
@@ -809,6 +817,17 @@
 	.pending-name {
 		font-size: 11px;
 		color: var(--text-tertiary);
+	}
+
+	.pending-profile {
+		font-size: 11px;
+		color: var(--accent);
+	}
+
+	.pending-usecase {
+		font-size: 11px;
+		color: var(--text-secondary);
+		font-style: italic;
 	}
 
 	.pending-date {

@@ -1,36 +1,15 @@
 <script lang="ts">
-	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
 	let email = $state('');
 	let password = $state('');
 	let name = $state('');
+	let company = $state('');
+	let role = $state('');
+	let useCase = $state('');
 	let error = $state('');
 	let loading = $state(false);
 	let tosAccepted = $state(false);
-	let inviteValid = $state<boolean | null>(null);
-
-	let inviteToken = $derived(new URL(page.url).searchParams.get('invite') ?? '');
-
-	$effect(() => {
-		if (inviteToken) {
-			validateInvite();
-		}
-	});
-
-	async function validateInvite() {
-		try {
-			const res = await fetch(`/api/auth/invite/validate?token=${encodeURIComponent(inviteToken)}`, { method: 'POST' });
-			inviteValid = res.ok;
-			if (!res.ok) {
-				const data = await res.json();
-				error = data.detail ?? 'Invalid invite';
-			}
-		} catch {
-			inviteValid = false;
-			error = 'Could not validate invite';
-		}
-	}
 
 	async function handleSignup() {
 		if (!tosAccepted) {
@@ -41,18 +20,20 @@
 			error = 'Email and password required';
 			return;
 		}
-		if (!inviteToken) {
-			error = 'Invite token required. Ask an admin for an invite link.';
-			return;
-		}
 		loading = true;
 		error = '';
 		try {
-			// Server-side signup: validates invite, creates GoTrue user, consumes invite
-			const res = await fetch('/api/auth/signup', {
+			const res = await fetch('/api/auth/register', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ email, password, name, invite_token: inviteToken })
+				body: JSON.stringify({
+					email,
+					password,
+					name,
+					company,
+					role,
+					use_case: useCase
+				})
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({ detail: 'Signup failed' }));
@@ -80,42 +61,54 @@
 <div class="auth-page">
 	<div class="auth-card">
 		<img src="/Corridor_Digital_Logo.svg" alt="Corridor Digital" class="auth-logo" />
-		<h1 class="auth-title mono">CORRIDORKEY</h1>
+		<div class="logo-row">
+			<h1 class="auth-title mono">CORRIDORKEY</h1>
+			<span class="beta-badge mono">BETA</span>
+		</div>
 		<p class="auth-subtitle">Create your account</p>
 
-		{#if !inviteToken}
-			<div class="auth-error mono">
-				No invite token. You need an invite link from an admin to sign up.
-			</div>
-		{:else if inviteValid === false}
-			<div class="auth-error mono">{error || 'Invalid or expired invite token.'}</div>
-		{:else}
-			{#if error}
-				<div class="auth-error mono">{error}</div>
-			{/if}
-
-			<div class="auth-form">
-				<label class="auth-field">
-					<span class="field-label mono">NAME</span>
-					<input type="text" bind:value={name} placeholder="Your name" onkeydown={onKeydown} />
-				</label>
-				<label class="auth-field">
-					<span class="field-label mono">EMAIL</span>
-					<input type="email" bind:value={email} placeholder="you@studio.com" onkeydown={onKeydown} />
-				</label>
-				<label class="auth-field">
-					<span class="field-label mono">PASSWORD</span>
-					<input type="password" bind:value={password} placeholder="••••••••" onkeydown={onKeydown} />
-				</label>
-				<label class="tos-check">
-					<input type="checkbox" bind:checked={tosAccepted} />
-					<span>I agree to not redistribute content processed through this platform</span>
-				</label>
-				<button class="auth-btn" onclick={handleSignup} disabled={loading || inviteValid !== true || !tosAccepted}>
-					{loading ? 'Creating account...' : 'Create Account'}
-				</button>
-			</div>
+		{#if error}
+			<div class="auth-error mono">{error}</div>
 		{/if}
+
+		<div class="auth-form">
+			<label class="auth-field">
+				<span class="field-label mono">NAME</span>
+				<input type="text" bind:value={name} placeholder="Your name" onkeydown={onKeydown} />
+			</label>
+			<label class="auth-field">
+				<span class="field-label mono">EMAIL</span>
+				<input type="email" bind:value={email} placeholder="you@studio.com" onkeydown={onKeydown} />
+			</label>
+			<label class="auth-field">
+				<span class="field-label mono">PASSWORD</span>
+				<input type="password" bind:value={password} placeholder="••••••••" onkeydown={onKeydown} />
+			</label>
+
+			<div class="profile-section">
+				<span class="section-hint">Optional — helps us review your application faster</span>
+				<label class="auth-field">
+					<span class="field-label mono">COMPANY / STUDIO</span>
+					<input type="text" bind:value={company} placeholder="e.g. Corridor Digital" onkeydown={onKeydown} />
+				</label>
+				<label class="auth-field">
+					<span class="field-label mono">ROLE</span>
+					<input type="text" bind:value={role} placeholder="e.g. VFX Artist, Producer, Editor" onkeydown={onKeydown} />
+				</label>
+				<label class="auth-field">
+					<span class="field-label mono">HOW WILL YOU USE CORRIDORKEY?</span>
+					<input type="text" bind:value={useCase} placeholder="e.g. Green screen compositing for short films" onkeydown={onKeydown} />
+				</label>
+			</div>
+
+			<label class="tos-check">
+				<input type="checkbox" bind:checked={tosAccepted} />
+				<span>I agree to not redistribute content processed through this platform</span>
+			</label>
+			<button class="auth-btn" onclick={handleSignup} disabled={loading || !tosAccepted}>
+				{loading ? 'Creating account...' : 'Create Account'}
+			</button>
+		</div>
 
 		<div class="auth-footer">
 			<span>Already have an account? <a href="/login">Sign in</a></span>
@@ -147,8 +140,25 @@
 	}
 
 	.auth-logo { width: 120px; filter: drop-shadow(0 0 4px rgba(255, 242, 3, 0.15)); }
+
+	.logo-row {
+		display: flex;
+		align-items: center;
+		gap: var(--sp-2);
+	}
+
 	.auth-title { font-size: 11px; letter-spacing: 0.2em; color: var(--text-tertiary); }
 	.auth-subtitle { font-size: 14px; color: var(--text-secondary); margin-top: calc(-1 * var(--sp-2)); }
+
+	.beta-badge {
+		font-size: 9px;
+		letter-spacing: 0.1em;
+		padding: 2px 6px;
+		border-radius: 4px;
+		background: rgba(255, 242, 3, 0.12);
+		color: var(--accent);
+		border: 1px solid rgba(255, 242, 3, 0.2);
+	}
 
 	.auth-error {
 		width: 100%;
@@ -176,6 +186,20 @@
 	}
 	.auth-field input:focus { border-color: var(--accent); }
 	.auth-field input::placeholder { color: var(--text-tertiary); }
+
+	.profile-section {
+		display: flex;
+		flex-direction: column;
+		gap: var(--sp-3);
+		padding-top: var(--sp-2);
+		border-top: 1px solid var(--border);
+	}
+
+	.section-hint {
+		font-size: 11px;
+		color: var(--text-tertiary);
+		font-style: italic;
+	}
 
 	.auth-btn {
 		padding: 12px;

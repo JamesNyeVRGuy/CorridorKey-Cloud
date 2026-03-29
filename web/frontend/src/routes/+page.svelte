@@ -22,6 +22,7 @@
 		<a href="/" class="nav-logo">
 			<img src="/Corridor_Digital_Logo.svg" alt="Corridor Digital" class="nav-logo-img" />
 			<span class="nav-product mono">CORRIDORKEY</span>
+			<span class="beta-badge mono">BETA</span>
 		</a>
 		<div class="nav-actions">
 			<a href="/login" class="nav-link">Log In</a>
@@ -167,6 +168,15 @@
 		font-size: 9px;
 		letter-spacing: 0.2em;
 		color: var(--text-tertiary);
+	}
+	.beta-badge {
+		font-size: 9px;
+		letter-spacing: 0.1em;
+		padding: 2px 6px;
+		border-radius: 4px;
+		background: rgba(255, 242, 3, 0.12);
+		color: var(--accent);
+		border: 1px solid rgba(255, 242, 3, 0.2);
 	}
 	.nav-actions {
 		display: flex;

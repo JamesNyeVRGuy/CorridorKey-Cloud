@@ -197,6 +197,7 @@
 			<a href="/clips" class="logo">
 				<img src="/Corridor_Digital_Logo.svg" alt="Corridor Digital" class="logo-img" />
 				<span class="logo-product mono">CORRIDORKEY</span>
+				<span class="beta-badge mono">BETA</span>
 			</a>
 
 			{#if authEnabled && $userOrgs.length > 1}
@@ -415,6 +416,17 @@
 		letter-spacing: 0.2em;
 		color: var(--text-tertiary);
 		font-weight: 500;
+	}
+
+	.beta-badge {
+		font-size: 8px;
+		letter-spacing: 0.1em;
+		padding: 1px 5px;
+		border-radius: 3px;
+		background: rgba(255, 242, 3, 0.12);
+		color: var(--accent);
+		border: 1px solid rgba(255, 242, 3, 0.2);
+		margin-left: 2px;
 	}
 
 	.nav-links {

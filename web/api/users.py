@@ -32,6 +32,9 @@ class UserRecord:
     email: str
     tier: str = "pending"
     name: str = ""
+    company: str = ""
+    role: str = ""
+    use_case: str = ""
     signed_up_at: float = 0.0
     approved_at: float = 0.0
     approved_by: str = ""
@@ -42,6 +45,9 @@ class UserRecord:
             "email": self.email,
             "tier": self.tier,
             "name": self.name,
+            "company": self.company,
+            "role": self.role,
+            "use_case": self.use_case,
             "signed_up_at": self.signed_up_at,
             "approved_at": self.approved_at,
             "approved_by": self.approved_by,
@@ -62,8 +68,16 @@ class UserStore:
     def _save_users(self, users: dict[str, dict]) -> None:
         self._storage.set_setting("users", users)
 
-    def record_signup(self, user_id: str, email: str, name: str = "") -> UserRecord:
-        """Record a new user signup. Called after invite consumption."""
+    def record_signup(
+        self,
+        user_id: str,
+        email: str,
+        name: str = "",
+        company: str = "",
+        role: str = "",
+        use_case: str = "",
+    ) -> UserRecord:
+        """Record a new user signup."""
         users = self._load_users()
         if user_id in users:
             return UserRecord(**users[user_id])
@@ -72,6 +86,9 @@ class UserStore:
             email=email,
             tier="pending",
             name=name,
+            company=company,
+            role=role,
+            use_case=use_case,
             signed_up_at=time.time(),
         )
         users[user_id] = record.to_dict()

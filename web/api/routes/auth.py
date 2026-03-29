@@ -39,6 +39,17 @@ class SignupRequest(BaseModel):
     invite_token: str = ""
 
 
+class RegisterRequest(BaseModel):
+    """Open registration — no invite token required (CRKY-103)."""
+
+    email: str
+    password: str
+    name: str = ""
+    company: str = ""
+    role: str = ""
+    use_case: str = ""
+
+
 class InviteTokenResponse(BaseModel):
     token: str
     created_at: float
@@ -401,6 +412,81 @@ def signup_with_invite(req: SignupRequest):
     # Record for approval workflow
     user_store = get_user_store()
     user_store.record_signup(user_id=user_id, email=req.email, name=req.name)
+
+    return {"status": "created", "user_id": user_id}
+
+
+@router.post("/register")
+def open_register(req: RegisterRequest):
+    """Open registration — no invite token required (CRKY-103).
+
+    Creates a GoTrue user via admin API with tier=pending. Users must
+    wait for admin approval before accessing the platform. Optional
+    profile fields (company, role, use_case) are stored for admin review.
+    """
+    if not AUTH_ENABLED:
+        raise HTTPException(status_code=400, detail="Auth is not enabled")
+    if not req.email or not req.password:
+        raise HTTPException(status_code=400, detail="Email and password required")
+
+    # Check if email is already registered
+    user_store = get_user_store()
+    if user_store.get_user_by_email(req.email):
+        raise HTTPException(status_code=409, detail="An account with this email already exists")
+
+    gotrue_url = os.environ.get(
+        "CK_GOTRUE_INTERNAL_URL", os.environ.get("CK_GOTRUE_URL", "http://localhost:54324")
+    ).strip()
+    service_key = os.environ.get("CK_SUPABASE_SERVICE_KEY", "").strip()
+
+    if not service_key:
+        raise HTTPException(status_code=500, detail="Server is not configured for open registration")
+
+    try:
+        import urllib.request
+
+        admin_body = json.dumps(
+            {
+                "email": req.email,
+                "password": req.password,
+                "email_confirm": True,
+                "app_metadata": {"tier": "pending"},
+                "user_metadata": {
+                    "name": req.name,
+                    "company": req.company,
+                    "role": req.role,
+                    "use_case": req.use_case,
+                },
+            }
+        ).encode()
+        admin_req = urllib.request.Request(
+            f"{gotrue_url}/admin/users",
+            data=admin_body,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {service_key}",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(admin_req, timeout=10) as resp:
+            user_data = json.loads(resp.read())
+            user_id = user_data.get("id", req.email)
+    except Exception as e:
+        error_msg = str(e)
+        if "already been registered" in error_msg.lower() or "duplicate" in error_msg.lower():
+            raise HTTPException(status_code=409, detail="An account with this email already exists") from e
+        logger.error(f"GoTrue registration error: {e}")
+        raise HTTPException(status_code=502, detail="Failed to create user account") from e
+
+    user_store.record_signup(
+        user_id=user_id,
+        email=req.email,
+        name=req.name,
+        company=req.company,
+        role=req.role,
+        use_case=req.use_case,
+    )
+    logger.info(f"Open registration: {req.email} → pending (company={req.company!r})")
 
     return {"status": "created", "user_id": user_id}
 
