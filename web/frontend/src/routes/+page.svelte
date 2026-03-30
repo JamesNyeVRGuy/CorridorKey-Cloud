@@ -25,6 +25,7 @@
 			<span class="beta-badge mono">BETA</span>
 		</a>
 		<div class="nav-actions">
+			<a href="https://discord.gg/44tHTSCGVQ" target="_blank" rel="noopener" class="nav-link">Discord</a>
 			<a href="/login" class="nav-link">Log In</a>
 			<a href="/signup" class="nav-btn">Get Started</a>
 		</div>
@@ -110,6 +111,7 @@
 			<a href="/terms">Terms</a>
 			<a href="/privacy">Privacy</a>
 			<a href="https://github.com/JamesNyeVRGuy/CorridorKey" target="_blank" rel="noopener">GitHub</a>
+			<a href="https://discord.gg/44tHTSCGVQ" target="_blank" rel="noopener">Discord</a>
 			<a href="/status">Status</a>
 		</div>
 		<span class="footer-copy mono">CorridorKey — Corridor Digital</span>
