@@ -50,13 +50,18 @@ EXEMPT_PREFIXES = (
 )
 
 
+_CLEANUP_INTERVAL = 600  # run cleanup every 10 minutes
+_STALE_KEY_AGE = 3600  # remove keys with no activity for 1 hour
+
+
 class _SlidingWindow:
-    """Thread-safe sliding window counter."""
+    """Thread-safe sliding window counter with automatic stale key cleanup."""
 
     def __init__(self):
         self._lock = threading.Lock()
         # {key: [timestamp, timestamp, ...]}
         self._windows: dict[str, list[float]] = defaultdict(list)
+        self._last_cleanup = time.time()
 
     def check_and_record(self, key: str, limit: int, window_seconds: float) -> tuple[bool, int]:
         """Check if within limit, record if so.
@@ -70,7 +75,11 @@ class _SlidingWindow:
         cutoff = now - window_seconds
 
         with self._lock:
-            # Prune old entries
+            # Periodic cleanup of stale keys (every 10 minutes)
+            if now - self._last_cleanup > _CLEANUP_INTERVAL:
+                self._cleanup_locked(now)
+
+            # Prune old entries for this key
             entries = self._windows[key]
             self._windows[key] = [t for t in entries if t > cutoff]
             entries = self._windows[key]
@@ -81,13 +90,15 @@ class _SlidingWindow:
             entries.append(now)
             return True, limit - len(entries)
 
-    def cleanup(self, max_age: float = 3600) -> None:
-        """Remove stale entries older than max_age seconds."""
-        cutoff = time.time() - max_age
-        with self._lock:
-            stale_keys = [k for k, v in self._windows.items() if not v or v[-1] < cutoff]
+    def _cleanup_locked(self, now: float) -> None:
+        """Remove keys with no recent entries. Must be called under self._lock."""
+        cutoff = now - _STALE_KEY_AGE
+        stale_keys = [k for k, v in self._windows.items() if not v or v[-1] < cutoff]
+        if stale_keys:
             for k in stale_keys:
                 del self._windows[k]
+            logger.debug(f"Rate limiter cleanup: removed {len(stale_keys)} stale keys, {len(self._windows)} remaining")
+        self._last_cleanup = now
 
 
 # Global counters

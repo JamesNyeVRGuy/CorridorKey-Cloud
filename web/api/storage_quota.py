@@ -26,10 +26,27 @@ DEFAULT_TEAM_QUOTA = int(os.environ.get("CK_QUOTA_TEAM_GB", "200").strip()) * _G
 # Disk usage cache: {org_id: (timestamp, bytes)}
 _usage_cache: dict[str, tuple[float, int]] = {}
 _CACHE_TTL = 30  # seconds — recompute at most every 30s
+_CACHE_MAX_SIZE = 500  # max org entries before eviction
+_CACHE_EVICT_AGE = 300  # evict entries older than 5 minutes
 # Max concurrent uploads per user
 _MAX_CONCURRENT_UPLOADS = int(os.environ.get("CK_MAX_CONCURRENT_UPLOADS", "3").strip())
 _active_uploads: dict[str, int] = {}  # {user_id: count}
 _upload_lock = threading.Lock()
+
+
+def _evict_stale_cache() -> None:
+    """Remove cache entries older than _CACHE_EVICT_AGE, or oldest if over _CACHE_MAX_SIZE."""
+    import time
+
+    now = time.time()
+    # Remove stale entries
+    stale = [k for k, (ts, _) in _usage_cache.items() if now - ts > _CACHE_EVICT_AGE]
+    for k in stale:
+        del _usage_cache[k]
+    # If still over max, evict oldest
+    while len(_usage_cache) > _CACHE_MAX_SIZE:
+        oldest_key = min(_usage_cache, key=lambda k: _usage_cache[k][0])
+        del _usage_cache[oldest_key]
 
 
 def get_org_disk_usage(org_id: str) -> int:
@@ -40,6 +57,10 @@ def get_org_disk_usage(org_id: str) -> int:
     cached = _usage_cache.get(org_id)
     if cached and now - cached[0] < _CACHE_TTL:
         return cached[1]
+
+    # Evict stale entries before adding new ones
+    if len(_usage_cache) >= _CACHE_MAX_SIZE:
+        _evict_stale_cache()
 
     base = get_base_clips_dir()
     if not base:
