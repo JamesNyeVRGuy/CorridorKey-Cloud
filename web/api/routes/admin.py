@@ -410,3 +410,56 @@ def get_audit_log(limit: int = 100, offset: int = 0, action: str | None = None):
             )
         cur.close()
         return {"entries": entries, "total": total}
+
+
+# ---------------------------------------------------------------------------
+# Clip retention policy (CRKY-115)
+# ---------------------------------------------------------------------------
+
+
+class RetentionPolicyUpdate(BaseModel):
+    enabled: bool | None = None
+    retention_days: dict[str, int] | None = None
+    delete_mode: str | None = None
+    check_interval: int | None = None
+
+
+@router.get("/retention")
+def get_retention():
+    """Get current clip retention policy."""
+    from ..clip_retention import get_retention_policy
+
+    policy = get_retention_policy()
+    return {
+        "enabled": policy.enabled,
+        "retention_days": policy.retention_days,
+        "delete_mode": policy.delete_mode,
+        "check_interval": policy.check_interval,
+    }
+
+
+@router.put("/retention")
+def update_retention(req: RetentionPolicyUpdate):
+    """Update clip retention policy."""
+    from ..clip_retention import get_retention_policy, set_retention_policy
+
+    policy = get_retention_policy()
+    if req.enabled is not None:
+        policy.enabled = req.enabled
+    if req.retention_days is not None:
+        policy.retention_days = req.retention_days
+    if req.delete_mode is not None:
+        if req.delete_mode not in ("outputs_only", "full"):
+            raise HTTPException(status_code=400, detail="delete_mode must be 'outputs_only' or 'full'")
+        policy.delete_mode = req.delete_mode
+    if req.check_interval is not None:
+        if req.check_interval < 60:
+            raise HTTPException(status_code=400, detail="check_interval must be >= 60 seconds")
+        policy.check_interval = req.check_interval
+    set_retention_policy(policy)
+    return {
+        "enabled": policy.enabled,
+        "retention_days": policy.retention_days,
+        "delete_mode": policy.delete_mode,
+        "check_interval": policy.check_interval,
+    }

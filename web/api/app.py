@@ -215,6 +215,11 @@ async def lifespan(app: FastAPI):
     worker_thread, stop_event = start_worker(service, queue, clips_dir)
     reaper_thread = start_reaper(queue, state.nodes, stop_event)
 
+    # Start clip retention cleanup daemon (CRKY-115)
+    from .clip_retention import start_cleanup
+
+    start_cleanup(clips_dir, stop_event)
+
     app.state.clips_dir = clips_dir
     app.state.worker_thread = worker_thread
     app.state.reaper_thread = reaper_thread

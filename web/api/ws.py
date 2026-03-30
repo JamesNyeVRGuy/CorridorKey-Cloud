@@ -149,6 +149,12 @@ class ConnectionManager:
             org_id=org_id,
         )
 
+    def send_clip_deleted(self, clip_name: str, org_id: str | None = None) -> None:
+        self.broadcast_sync(
+            {"type": "clip:deleted", "data": {"clip_name": clip_name}},
+            org_id=org_id,
+        )
+
     def send_clip_state_changed(self, clip_name: str, new_state: str, org_id: str | None = None) -> None:
         self.broadcast_sync(
             {
