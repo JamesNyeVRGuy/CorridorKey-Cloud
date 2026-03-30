@@ -369,10 +369,10 @@
 								<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1v9M4 7l4 4 4-4M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
 								NVIDIA
 							</a>
-							<a href="https://huggingface.co/JamesNyeVRGuy/corridorkey-node/resolve/main/latest/corridorkey-node-amd-setup.exe" target="_blank" rel="noopener" class="download-btn mono download-secondary">
-								<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1v9M4 7l4 4 4-4M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-								AMD
-							</a>
+							<span class="download-btn mono download-disabled" title="AMD standalone binary is in development">
+								<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+								AMD <span class="wip-label">COMING SOON</span>
+							</span>
 							<p class="download-hint">Windows installer. Paste your token on first launch. Linux nodes should use Docker Compose below.</p>
 						</div>
 					</div>
@@ -1810,6 +1810,15 @@ volumes:
 		background: var(--surface-2); color: var(--text-secondary); margin-left: var(--sp-2);
 	}
 	.download-secondary:hover { background: var(--surface-3); color: var(--text-primary); box-shadow: none; }
+	.download-disabled {
+		background: var(--surface-2); color: var(--text-tertiary); margin-left: var(--sp-2);
+		opacity: 0.6; cursor: not-allowed; pointer-events: none;
+	}
+	.wip-label {
+		font-size: 8px; letter-spacing: 0.08em; padding: 1px 4px;
+		border-radius: 3px; background: rgba(255, 82, 82, 0.15); color: var(--state-error);
+		margin-left: 4px;
+	}
 	.download-hint {
 		font-size: 10px; color: var(--text-tertiary); margin-top: var(--sp-2);
 	}
