@@ -369,13 +369,16 @@ def _release_download_slot(user_id: str) -> None:
             _download_slots.pop(user_id, None)
 
 
-async def _throttled_file_stream(path: str, chunk_size: int = 64 * 1024):
-    """Stream a file with rate limiting."""
+async def _throttled_file_stream(path: str, chunk_size: int = 256 * 1024):
+    """Stream a file with rate limiting. Uses larger chunks for throughput."""
     bytes_this_second = 0
     second_start = time.monotonic()
-    with open(path, "rb") as f:
+    loop = asyncio.get_running_loop()
+    f = open(path, "rb")  # noqa: SIM115
+    try:
         while True:
-            chunk = f.read(chunk_size)
+            # Read in executor to avoid blocking the event loop
+            chunk = await loop.run_in_executor(None, f.read, chunk_size)
             if not chunk:
                 break
             yield chunk
@@ -389,6 +392,8 @@ async def _throttled_file_stream(path: str, chunk_size: int = 64 * 1024):
             elif elapsed >= 1.0:
                 bytes_this_second = 0
                 second_start = now
+    finally:
+        f.close()
 
 
 @router.get("/{clip_name}/{pass_name}/download")
@@ -401,7 +406,27 @@ def download_pass(clip_name: str, pass_name: str, request: Request):
     if clip_root is None:
         raise HTTPException(status_code=404, detail=f"Clip '{clip_name}' not found")
 
-    # Per-user concurrent download limit
+    target_dir = _resolve_pass_dir(clip_root, pass_name)
+    files = natsorted(os.listdir(target_dir))
+    files = [f for f in files if not f.startswith(".")]
+    if not files:
+        raise HTTPException(status_code=404, detail=f"No files in {pass_name}")
+
+    zip_name = f"{clip_name}_{pass_name}.zip"
+
+    # Build ZIP to a temp file FIRST (no download slot held during build)
+    zip_path = os.path.join(_cache_dir, f"dl_{zip_name}")
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for fname in files:
+                fpath = os.path.join(target_dir, fname)
+                zf.write(fpath, arcname=os.path.join(pass_name, fname))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to create ZIP") from e
+
+    file_size = os.path.getsize(zip_path)
+
+    # Acquire download slot AFTER ZIP is built (only held during streaming)
     from ..auth import AUTH_ENABLED, get_current_user
 
     user_id = "anonymous"
@@ -410,28 +435,6 @@ def download_pass(clip_name: str, pass_name: str, request: Request):
         if user:
             user_id = user.user_id
     _acquire_download_slot(user_id)
-
-    target_dir = _resolve_pass_dir(clip_root, pass_name)
-    files = natsorted(os.listdir(target_dir))
-    files = [f for f in files if not f.startswith(".")]
-    if not files:
-        _release_download_slot(user_id)
-        raise HTTPException(status_code=404, detail=f"No files in {pass_name}")
-
-    zip_name = f"{clip_name}_{pass_name}.zip"
-
-    # Build ZIP to a temp file (streaming partial ZIPs produces corrupt files)
-    zip_path = os.path.join(_cache_dir, f"dl_{zip_name}")
-    try:
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for fname in files:
-                fpath = os.path.join(target_dir, fname)
-                zf.write(fpath, arcname=os.path.join(pass_name, fname))
-    except Exception as e:
-        _release_download_slot(user_id)
-        raise HTTPException(status_code=500, detail="Failed to create ZIP") from e
-
-    file_size = os.path.getsize(zip_path)
 
     async def stream_and_release():
         try:
