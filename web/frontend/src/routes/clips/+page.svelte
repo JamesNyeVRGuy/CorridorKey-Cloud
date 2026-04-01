@@ -302,6 +302,7 @@
 		const projectName = uploadProjectMode === 'existing'
 			? (projects.find(p => p.name === uploadSelectedProject)?.display_name || uploadSelectedProject)
 			: uploadProjectName.trim();
+		const existingProject = uploadProjectMode === 'existing' ? uploadSelectedProject : null;
 		uploadStatus = 'uploading';
 		uploading = true;
 		uploadError = null;
@@ -322,6 +323,9 @@
 				}
 			}
 
+			// Upload first file with project name (creates the project), then
+			// move subsequent clips into that same project to avoid duplicates.
+			let targetProjectName: string | null = existingProject;
 			for (let fi = 0; fi < otherFiles.length; fi++) {
 				const file = otherFiles[fi];
 				const idx = pendingFiles.indexOf(file);
@@ -329,12 +333,30 @@
 				const onProgress = (loaded: number, total: number) => {
 					if (idx >= 0) uploadFileProgress[idx] = { ...uploadFileProgress[idx], progress: Math.round((loaded / total) * 100) };
 				};
+				// First file creates the project; subsequent files upload without a name
+				// then get moved into the first file's project
+				const uploadName = fi === 0 ? (projectName || undefined) : undefined;
 				if (isVideo(file.name)) {
-					result = await api.upload.video(file, projectName || undefined, $autoExtractFrames, onProgress);
+					result = await api.upload.video(file, uploadName, $autoExtractFrames, onProgress);
 				} else if (isZip(file.name)) {
-					result = await api.upload.frames(file, projectName || undefined, onProgress);
+					result = await api.upload.frames(file, uploadName, onProgress);
 				} else { continue; }
-				if (result?.clips) for (const c of result.clips) { if (c.name) lastUploadedClips.push(c.name); }
+				if (result?.clips) {
+					for (const c of result.clips) {
+						if (c.name) lastUploadedClips.push(c.name);
+						// After first upload in "new" mode, find the project it created
+						if (fi === 0 && !targetProjectName) {
+							const refreshed = await api.projects.list();
+							const match = refreshed.find(p => p.clips.some(cl => cl.name === c.name));
+							if (match) targetProjectName = match.name;
+						}
+						// Move clips into the target project (all for existing, fi>0 for new)
+						const shouldMove = existingProject ? true : fi > 0;
+						if (shouldMove && targetProjectName && c.name) {
+							try { await api.clips.move(c.name, targetProjectName); } catch { /* best effort */ }
+						}
+					}
+				}
 				if (idx >= 0) uploadFileProgress[idx] = { ...uploadFileProgress[idx], done: true, progress: 100 };
 			}
 
