@@ -72,6 +72,8 @@ services:
   corridorkey-node:
     image: ghcr.io/jamesnyevrguy/corridorkey-node:nvidia
     restart: unless-stopped
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     deploy:
       resources:
         reservations:
