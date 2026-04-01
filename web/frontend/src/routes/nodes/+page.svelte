@@ -59,9 +59,16 @@
 		return (Date.now() / 1000 - n.last_heartbeat) < 60;
 	}
 
+	function isOutdated(n: any): boolean {
+		// API sends version_ok from to_dict() and version_match from mgmt endpoint
+		if (n.version_match === false) return true;
+		if (n.version_ok === false) return true;
+		return false;
+	}
+
 	function statusClass(n: NodeInfo): string {
 		if (!isAlive(n)) return 'offline';
-		if (n.version_ok === false) return 'outdated';
+		if (isOutdated(n)) return 'outdated';
 		if (n.status === 'busy') return 'busy';
 		if (n.paused) return 'paused';
 		return 'online';
@@ -69,7 +76,7 @@
 
 	function statusLabel(n: NodeInfo): string {
 		if (!isAlive(n)) return 'Offline';
-		if (n.version_ok === false) return 'Outdated';
+		if (isOutdated(n)) return 'Outdated';
 		if (n.status === 'busy') return 'Busy';
 		if (n.paused) return 'Paused';
 		return 'Online';
@@ -273,6 +280,7 @@
 							{#if node.paused}<span class="tag-paused mono">PAUSED</span>{/if}
 							{#if node.schedule?.enabled}<span class="tag-sched mono">{node.schedule.start}–{node.schedule.end}</span>{/if}
 							{#if node.model_compiled}<span class="tag-compiled mono">COMPILED</span>{/if}
+							{#if isOutdated(node)}<span class="tag-outdated mono">OUTDATED</span>{/if}
 						</div>
 					</button>
 
@@ -293,7 +301,7 @@
 							<!-- Info rows -->
 							<div class="expand-info">
 								<div class="info-row"><span class="info-label">Node ID</span><span class="mono">{node.node_id}</span></div>
-								<div class="info-row"><span class="info-label">Host</span><span class="mono">{node.host}</span></div>
+								<div class="info-row"><span class="info-label">Organization</span><span>{node.org_name || '—'}</span></div>
 								<div class="info-row"><span class="info-label">Accepted</span><span class="mono">{formatTypes(node)}</span></div>
 								<div class="info-row">
 								<span class="info-label">Visibility</span>
@@ -303,16 +311,34 @@
 									<span class="visibility-badge mono" class:shared={node.visibility === 'shared'}>{node.visibility === 'shared' ? 'SHARED' : 'PRIVATE'}</span>
 								{/if}
 							</div>
-								<div class="info-row"><span class="info-label">Version</span><span class="mono">{node.agent_version?.substring(0, 8) || '—'}</span></div>
+								<div class="info-row"><span class="info-label">Version</span><span class="mono">{node.agent_version?.substring(0, 8) || '—'}{#if isOutdated(node)} <span class="tag-outdated mono">OUTDATED</span>{/if}</span></div>
 								{#if node.reputation}
-									<div class="info-row">
-										<span class="info-label">Score breakdown</span>
-										<span class="mono">
-											{node.reputation.breakdown?.success?.points ?? 0} success +
-											{node.reputation.breakdown?.speed?.points ?? 0} speed +
-											{node.reputation.breakdown?.uptime?.points ?? 0} uptime{#if node.reputation.breakdown?.security_penalty?.points} {node.reputation.breakdown.security_penalty.points} penalty{/if}
-											= {node.reputation.score}
-										</span>
+									<div class="score-breakdown">
+										<span class="info-label">Reputation</span>
+										<div class="score-bars">
+											{@const bd = node.reputation.breakdown}
+											<div class="score-bar-row">
+												<span class="score-bar-label mono">Success</span>
+												<div class="score-bar"><div class="score-bar-fill success" style="width: {(bd?.success?.points ?? 0) / 50 * 100}%"></div></div>
+												<span class="score-bar-value mono">{bd?.success?.points ?? 0}/50</span>
+											</div>
+											<div class="score-bar-row">
+												<span class="score-bar-label mono">Speed</span>
+												<div class="score-bar"><div class="score-bar-fill speed" style="width: {(bd?.speed?.points ?? 0) / 20 * 100}%"></div></div>
+												<span class="score-bar-value mono">{bd?.speed?.points ?? 0}/20</span>
+											</div>
+											<div class="score-bar-row">
+												<span class="score-bar-label mono">Uptime</span>
+												<div class="score-bar"><div class="score-bar-fill uptime" style="width: {(bd?.uptime?.points ?? 0) / 30 * 100}%"></div></div>
+												<span class="score-bar-value mono">{bd?.uptime?.points ?? 0}/30</span>
+											</div>
+											{#if bd?.security_penalty?.points}
+												<div class="score-bar-row">
+													<span class="score-bar-label mono">Penalty</span>
+													<span class="score-bar-value mono penalty">{bd.security_penalty.points}</span>
+												</div>
+											{/if}
+										</div>
 									</div>
 								{/if}
 							</div>
@@ -475,6 +501,21 @@
 	.tag-paused { font-size: 8px; padding: 1px 5px; border-radius: 3px; background: rgba(144, 164, 174, 0.15); color: var(--state-queued); letter-spacing: 0.06em; }
 	.tag-sched { font-size: 8px; padding: 1px 5px; border-radius: 3px; background: rgba(0, 154, 218, 0.1); color: var(--secondary); }
 	.tag-compiled { font-size: 8px; padding: 1px 5px; border-radius: 3px; background: rgba(93, 216, 121, 0.1); color: var(--state-complete); letter-spacing: 0.06em; }
+
+	.tag-outdated { font-size: 8px; padding: 1px 5px; border-radius: 3px; background: rgba(255, 82, 82, 0.12); color: var(--state-error); letter-spacing: 0.06em; }
+
+	/* Score breakdown bars */
+	.score-breakdown { display: flex; flex-direction: column; gap: var(--sp-2); grid-column: 1 / -1; }
+	.score-bars { display: flex; flex-direction: column; gap: 4px; }
+	.score-bar-row { display: flex; align-items: center; gap: var(--sp-2); }
+	.score-bar-label { font-size: 10px; color: var(--text-tertiary); min-width: 55px; }
+	.score-bar { flex: 1; height: 4px; background: var(--surface-4); border-radius: 2px; overflow: hidden; }
+	.score-bar-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+	.score-bar-fill.success { background: var(--state-complete); }
+	.score-bar-fill.speed { background: var(--secondary); }
+	.score-bar-fill.uptime { background: var(--accent); }
+	.score-bar-value { font-size: 10px; color: var(--text-tertiary); min-width: 35px; text-align: right; }
+	.score-bar-value.penalty { color: var(--state-error); }
 
 	.visibility-toggle, .visibility-badge {
 		font-size: 10px; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 3px;
