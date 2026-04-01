@@ -306,9 +306,10 @@
 									<div class="info-row">
 										<span class="info-label">Score breakdown</span>
 										<span class="mono">
-											{((node.reputation.success_rate ?? 0) * 50).toFixed(0)} success +
-											{(Math.min(1, (node.reputation.avg_fps ?? 0) / 2) * 20).toFixed(0)} speed +
-											{30} uptime = {node.reputation.score}
+											{node.reputation.breakdown?.success?.points ?? 0} success +
+											{node.reputation.breakdown?.speed?.points ?? 0} speed +
+											{node.reputation.breakdown?.uptime?.points ?? 0} uptime{#if node.reputation.breakdown?.security_penalty?.points} {node.reputation.breakdown.security_penalty.points} penalty{/if}
+											= {node.reputation.score}
 										</span>
 									</div>
 								{/if}
