@@ -178,9 +178,7 @@ def record_heartbeat(node_id: str, on_time: bool = True) -> None:
 
 
 def record_security_warning(node_id: str, warnings: list[str]) -> None:
-    """Record security warnings from node registration. Penalizes reputation."""
-    if not warnings:
-        return
+    """Record security warnings from node registration. Clears penalty if no warnings."""
     reps = _load_reputations()
     data = reps.get(node_id, {"node_id": node_id})
     rep = NodeReputation(**data)

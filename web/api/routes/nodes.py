@@ -241,11 +241,10 @@ def register_node(req: NodeRegisterRequest, request: Request):
     if security_warnings:
         logger.warning(f"Node {req.name} ({req.node_id}) security: {', '.join(security_warnings)}")
 
-    # Apply reputation penalty for insecure nodes
-    if security_warnings:
-        from ..node_reputation import record_security_warning
+    # Update security reputation (clears penalty if no warnings)
+    from ..node_reputation import record_security_warning
 
-        record_security_warning(req.node_id, security_warnings)
+    record_security_warning(req.node_id, security_warnings)
 
     # --- VRAM check ---
     # Minimum 10GB VRAM required (GVM needs ~8GB + headroom for frames/OS).
