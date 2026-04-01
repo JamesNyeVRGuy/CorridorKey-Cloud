@@ -177,6 +177,13 @@ services:
       - CK_S3_ACCESS_KEY_ID=${CK_S3_ACCESS_KEY_ID:-}
       - CK_S3_SECRET_ACCESS_KEY=${CK_S3_SECRET_ACCESS_KEY:-}
       - CK_REDIS_URL=${CK_REDIS_URL:-redis://redis:6379/0}
+      - CK_SMTP_HOST=${SMTP_HOST:-}
+      - CK_SMTP_PORT=${SMTP_PORT:-587}
+      - CK_SMTP_USER=${SMTP_USER:-}
+      - CK_SMTP_PASS=${SMTP_PASS:-}
+      - CK_SMTP_FROM_EMAIL=${SMTP_ADMIN_EMAIL:-noreply@corridorkey.cloud}
+      - CK_SMTP_FROM_NAME=${SMTP_SENDER_NAME:-CorridorKey}
+      - CK_SITE_URL=${SITE_URL:-http://localhost:3000}
     volumes:
       - ${CK_PROJECTS_DIR:-./Projects}:/app/Projects
       - ${CK_WEIGHTS_DIR:-./weights}/corridorkey:/app/CorridorKeyModule/checkpoints

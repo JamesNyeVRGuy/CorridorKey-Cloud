@@ -83,6 +83,12 @@ def approve_user(user_id: str, request: Request):
         add_contributed(personal_org.org_id, STARTER_CREDITS)
 
     audit_from_request("user.approved", request, target_type="user", target_id=user_id, details={"email": user.email})
+
+    # Send approval notification email
+    from ..email import send_approval_email
+
+    send_approval_email(user.email, user.name)
+
     return {"status": "approved", "user": updated.to_dict() if updated else None}
 
 
