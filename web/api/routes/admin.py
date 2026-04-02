@@ -87,9 +87,9 @@ def approve_user(user_id: str, request: Request):
     # Send approval notification email
     from ..email import send_approval_email
 
-    send_approval_email(user.email, user.name)
+    email_sent = send_approval_email(user.email, user.name)
 
-    return {"status": "approved", "user": updated.to_dict() if updated else None}
+    return {"status": "approved", "email_sent": email_sent, "user": updated.to_dict() if updated else None}
 
 
 @router.post("/users/{user_id}/reject")

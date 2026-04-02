@@ -35,7 +35,7 @@ def is_smtp_configured() -> bool:
 def send_email(to: str, subject: str, html_body: str, text_body: str | None = None) -> bool:
     """Send an email. Returns True on success, False on failure. Never raises."""
     if not is_smtp_configured():
-        logger.debug("SMTP not configured — skipping email")
+        logger.warning("SMTP not configured — skipping email (set CK_SMTP_HOST and CK_SMTP_FROM_EMAIL)")
         return False
 
     try:
