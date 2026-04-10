@@ -1,14 +1,24 @@
 <script lang="ts">
+	const PASS_LABELS: Record<string, string> = {
+		fg: 'FG',
+		matte: 'Matte',
+		comp: 'Comp',
+		processed: 'Processed',
+		alpha: 'Alpha',
+	};
+
 	let {
 		current = 0,
 		total = 0,
 		showLabel = true,
 		startedAt = null as number | null,
+		uploadPass = null as string | null,
 	}: {
 		current?: number;
 		total?: number;
 		showLabel?: boolean;
 		startedAt?: number | null;
+		uploadPass?: string | null;
 	} = $props();
 
 	let pct = $derived(total > 0 ? Math.min(100, (current / total) * 100) : 0);
@@ -63,7 +73,7 @@
 	{#if showLabel && total > 0}
 		<div class="progress-stats mono">
 			{#if current >= total}
-				<span class="progress-main uploading">Uploading results...</span>
+				<span class="progress-main uploading">Uploading{uploadPass ? ` ${PASS_LABELS[uploadPass] ?? uploadPass}` : ''}...</span>
 			{:else}
 				<span class="progress-main">{current}<span class="dim">/{total}</span> &middot; {pct.toFixed(0)}%</span>
 				{#if fps}

@@ -881,6 +881,13 @@ async def upload_result_bundle(
         logger.warning(f"Invalid tar upload from node {node_id}: {e}")
         raise HTTPException(status_code=400, detail="Invalid tar stream") from e
 
+    # Broadcast upload progress for this pass (CRKY-96)
+    if job_id and count > 0:
+        queue = get_queue()
+        job = queue.find_job_by_id(job_id)
+        oid = job.org_id if job else None
+        manager.send_upload_progress(job_id, clip_name, pass_name, total_bytes, count, org_id=oid)
+
     return {"status": "ok", "count": count}
 
 
@@ -930,5 +937,12 @@ async def upload_result_file(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to save file") from e
+
+    # Broadcast upload progress (CRKY-96)
+    if job_id:
+        queue = get_queue()
+        job = queue.find_job_by_id(job_id)
+        oid = job.org_id if job else None
+        manager.send_upload_progress(job_id, clip_name, pass_name, total_bytes, 1, org_id=oid)
 
     return {"status": "ok"}

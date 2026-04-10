@@ -184,6 +184,9 @@
 				refreshJobs();
 				refreshClips();
 				if (d.status === 'completed' || d.status === 'failed') refreshCredits();
+			} else if (msg.type === 'job:upload_progress') {
+				const d = msg.data as { job_id: string; pass_name: string };
+				updateJobFromWS(d.job_id, { upload_pass: d.pass_name });
 			} else if (msg.type === 'job:warning') {
 				const d = msg.data as { message: string };
 				toast.warning(d.message);
@@ -333,7 +336,7 @@
 					<span class="activity-type">{rJob.job_type.replace('_', ' ')}</span>
 					<span class="activity-clip">{rJob.clip_name}</span>
 					{#if rJob.total_frames > 0 && rJob.current_frame >= rJob.total_frames}
-						<span class="activity-pct uploading">Uploading...</span>
+						<span class="activity-pct uploading">Uploading{rJob.upload_pass ? ` ${rJob.upload_pass.toUpperCase()}` : ''}...</span>
 					{:else if rJob.total_frames > 0}
 						<span class="activity-pct">{Math.round((rJob.current_frame / rJob.total_frames) * 100)}%</span>
 					{/if}

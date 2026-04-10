@@ -149,6 +149,29 @@ class ConnectionManager:
             org_id=org_id,
         )
 
+    def send_upload_progress(
+        self,
+        job_id: str,
+        clip_name: str,
+        pass_name: str,
+        bytes_received: int,
+        files_received: int,
+        org_id: str | None = None,
+    ) -> None:
+        self.broadcast_sync(
+            {
+                "type": "job:upload_progress",
+                "data": {
+                    "job_id": job_id,
+                    "clip_name": clip_name,
+                    "pass_name": pass_name,
+                    "bytes_received": bytes_received,
+                    "files_received": files_received,
+                },
+            },
+            org_id=org_id,
+        )
+
     def send_clip_deleted(self, clip_name: str, org_id: str | None = None) -> None:
         self.broadcast_sync(
             {"type": "clip:deleted", "data": {"clip_name": clip_name}},
@@ -257,7 +280,7 @@ def _validate_ws_token(token: str) -> dict[str, Any] | None:
 
         return pyjwt.decode(token, JWT_SECRET, algorithms=JWT_ALGORITHMS, audience="authenticated")
     except Exception as e:
-        logger.warning(f"WebSocket JWT validation failed: {e}")
+        logger.debug(f"WebSocket JWT validation failed: {e}")
         return None
 
 
@@ -277,12 +300,12 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     if AUTH_ENABLED:
         token = ws.query_params.get("token", "")
         if not token:
-            logger.warning("WebSocket rejected: no token in query params")
+            logger.debug("WebSocket rejected: no token in query params")
             await ws.close(code=4001, reason="Missing token")
             return
         claims = _validate_ws_token(token)
         if claims is None:
-            logger.warning("WebSocket rejected: JWT validation failed (see warning above)")
+            logger.debug("WebSocket rejected: JWT validation failed")
             await ws.close(code=4001, reason="Invalid token")
             return
         user_id = claims.get("sub", "")

@@ -96,7 +96,7 @@
 	<div class="job-info">
 		<span class="job-clip">{job.clip_name}</span>
 		{#if isRunning}
-			<ProgressBar current={job.current_frame} total={job.total_frames} startedAt={job.started_at > 0 ? job.started_at * 1000 : null} />
+			<ProgressBar current={job.current_frame} total={job.total_frames} startedAt={job.started_at > 0 ? job.started_at * 1000 : null} uploadPass={job.upload_pass} />
 			<div class="job-stats mono">
 				<span>{job.current_frame}/{job.total_frames} frames</span>
 				<span class="stat-sep">&bull;</span>
