@@ -33,6 +33,11 @@
 	let userActivity = $state<any>(null);
 	let activityLoading = $state(false);
 
+	// Credit grant
+	let grantHours = $state('');
+	let grantInProgress = $state(false);
+	let grantResult = $state<{ msg: string; ok: boolean } | null>(null);
+
 	async function adminFetch(path: string, opts?: RequestInit) {
 		const token = localStorage.getItem('ck:auth_token');
 		const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -87,9 +92,27 @@
 		} finally { inviteGenerating = false; }
 	}
 
+	async function grantCredits(orgId: string) {
+		const hours = parseFloat(grantHours);
+		if (!hours || isNaN(hours)) { grantResult = { msg: 'Enter a valid number of hours', ok: false }; return; }
+		grantInProgress = true;
+		grantResult = null;
+		try {
+			const res = await adminFetch('/api/admin/credits/grant', {
+				method: 'POST', body: JSON.stringify({ org_id: orgId, hours })
+			});
+			const bal = (res.balance_seconds / 3600).toFixed(1);
+			grantResult = { msg: `${hours > 0 ? '+' : ''}${hours}h applied. Balance: ${bal}h`, ok: true };
+			grantHours = '';
+		} catch (e) {
+			grantResult = { msg: e instanceof Error ? e.message : 'Failed', ok: false };
+		} finally { grantInProgress = false; }
+	}
+
 	async function toggleExpand(userId: string) {
 		if (expandedUser === userId) { expandedUser = null; return; }
 		expandedUser = userId;
+		grantHours = ''; grantResult = null;
 		activityLoading = true; userActivity = null;
 		try {
 			userActivity = await adminFetch(`/api/admin/users/${encodeURIComponent(userId)}/activity`);
@@ -269,6 +292,25 @@
 								{#each TIERS as t}<option value={t}>{t}</option>{/each}
 							</select>
 						</label>
+						{#if u.orgs && u.orgs.length > 0}
+							<div class="credit-grant">
+								<span class="detail-label">Credits:</span>
+								<input
+									type="number"
+									step="0.5"
+									class="credit-input mono"
+									placeholder="hours"
+									bind:value={grantHours}
+									onkeydown={(e) => { if (e.key === 'Enter' && u.orgs?.[0]) grantCredits(u.orgs[0].org_id); }}
+								/>
+								<button class="btn-grant mono" onclick={() => grantCredits(u.orgs![0].org_id)} disabled={grantInProgress}>
+									{grantInProgress ? '...' : 'GRANT'}
+								</button>
+								{#if grantResult}
+									<span class="grant-msg mono" class:grant-ok={grantResult.ok} class:grant-err={!grantResult.ok}>{grantResult.msg}</span>
+								{/if}
+							</div>
+						{/if}
 					</div>
 				</div>
 			{/if}
@@ -421,6 +463,23 @@
 		font-size: 10px; padding: 2px 8px; border-radius: 3px;
 		background: var(--surface-4); color: var(--text-secondary);
 	}
-	.detail-actions { margin-top: var(--sp-3); display: flex; gap: var(--sp-3); }
+	.detail-actions { margin-top: var(--sp-3); display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
 	.tier-change { display: flex; align-items: center; gap: var(--sp-2); font-size: 12px; color: var(--text-secondary); }
+	.credit-grant { display: flex; align-items: center; gap: var(--sp-2); font-size: 12px; color: var(--text-secondary); }
+	.credit-input {
+		width: 70px; padding: 5px 8px; background: var(--surface-3); border: 1px solid var(--border);
+		border-radius: var(--radius-sm); color: var(--text-primary); font-size: 11px; text-align: right;
+	}
+	.credit-input:focus { border-color: var(--accent); outline: none; }
+	.credit-input::placeholder { color: var(--text-tertiary); }
+	.btn-grant {
+		padding: 5px 10px; font-size: 10px; letter-spacing: 0.06em; font-weight: 600;
+		background: rgba(93, 216, 121, 0.1); color: var(--state-complete); border: 1px solid rgba(93, 216, 121, 0.3);
+		border-radius: var(--radius-sm); cursor: pointer; transition: all 0.15s;
+	}
+	.btn-grant:hover:not(:disabled) { background: rgba(93, 216, 121, 0.2); }
+	.btn-grant:disabled { opacity: 0.4; cursor: not-allowed; }
+	.grant-msg { font-size: 10px; }
+	.grant-ok { color: var(--state-complete); }
+	.grant-err { color: var(--state-error); }
 </style>
