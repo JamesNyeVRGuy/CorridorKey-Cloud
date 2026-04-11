@@ -51,25 +51,17 @@ def send_email(to: str, subject: str, html_body: str, text_body: str | None = No
         msg.attach(MIMEText(html_body, "html"))
 
         with smtplib.SMTP(_SMTP_HOST, _SMTP_PORT, timeout=20) as server:
-            logger.info("MAIL:Sending EHLO")
             server.ehlo()
             # Try STARTTLS on port 25 too (it's available)
-            if _SMTP_PORT == 25 or _SMTP_PORT == 587:
-                logger.info("MAIL:Attempting STARTTLS")
-                try:
+            # Only auth if NOT on port 25 - DC
+            if _SMTP_PORT != 25:
+                if _SMTP_PORT == 587:
                     server.starttls()
                     server.ehlo()
-                    logger.info("MAIL:STARTTLS successful")
-                except Exception as e:
-                    logger.info(f"MAIL:STARTTLS not available or failed: {e}")
-            if _SMTP_USER and _SMTP_PASS:
-                logger.info(f"MAIL:Logging in as {_SMTP_USER}")
-                server.login(_SMTP_USER, _SMTP_PASS)
-            else:
-                logger.info("MAIL:No credentials - relying on mynetworks")
-            logger.info(f"MAIL:Sending mail from {_FROM_EMAIL} to {to}")
+                if _SMTP_USER and _SMTP_PASS:
+                    server.login(_SMTP_USER, _SMTP_PASS)
+            
             server.sendmail(_FROM_EMAIL, to, msg.as_string())
-            logger.info("MAIL:SENDMAIL completed successfully")
 
         logger.info(f"MAIL:Email sent to {to}: {subject}")
         return True
