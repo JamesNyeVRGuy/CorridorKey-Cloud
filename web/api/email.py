@@ -18,14 +18,16 @@ from email.mime.text import MIMEText
 
 logger = logging.getLogger(__name__)
 
-_SMTP_HOST = os.environ.get("CK_SMTP_HOST", os.environ.get("SMTP_HOST", "")).strip()
-_SMTP_PORT = int(os.environ.get("CK_SMTP_PORT", os.environ.get("SMTP_PORT", "587")).strip())
-_SMTP_USER = os.environ.get("CK_SMTP_USER", os.environ.get("SMTP_USER", "")).strip()
-_SMTP_PASS = os.environ.get("CK_SMTP_PASS", os.environ.get("SMTP_PASS", "")).strip()
-_FROM_EMAIL = os.environ.get("CK_SMTP_FROM_EMAIL", os.environ.get("SMTP_ADMIN_EMAIL", "")).strip()
-_FROM_NAME = os.environ.get("CK_SMTP_FROM_NAME", os.environ.get("SMTP_SENDER_NAME", "CorridorKey")).strip()
+_SMTP_HOST = os.environ.get("CK_SMTP_HOST", os.environ.get("GOTRUE_SMTP_HOST", "")).strip()
+_SMTP_PORT = int(os.environ.get("CK_SMTP_PORT", os.environ.get("GOTRUE_SMTP_PORT", "587")).strip())
+_SMTP_USER = os.environ.get("CK_SMTP_USER", os.environ.get("GOTRUE_SMTP_USER", "")).strip()
+_SMTP_PASS = os.environ.get("CK_SMTP_PASS", os.environ.get("GOTRUE_SMTP_PASS", "")).strip()
+_FROM_EMAIL = os.environ.get("CK_SMTP_FROM_EMAIL", os.environ.get("GOTRUE_SMTP_FROM_EMAIL", "")).strip()
+_FROM_NAME = os.environ.get("CK_SMTP_FROM_NAME", os.environ.get("GOTRUE_SMTP_FROM_NAME", "CorridorKey")).strip()
 
-_SITE_URL = os.environ.get("CK_SITE_URL", os.environ.get("GOTRUE_SITE_URL", "https://corridorkey.cloud")).strip()
+_SITE_URL = os.environ.get("CK_SITE_URL", os.environ.get("SITE_URL", "https://corridorkey.cloud")).strip()
+
+logger.info(f"SMTP Config: host={_SMTP_HOST}, port={_SMTP_PORT}, user={_SMTP_USER}, has_pass={bool(_SMTP_PASS)}")
 
 
 def is_smtp_configured() -> bool:
@@ -48,19 +50,31 @@ def send_email(to: str, subject: str, html_body: str, text_body: str | None = No
             msg.attach(MIMEText(text_body, "plain"))
         msg.attach(MIMEText(html_body, "html"))
 
-        with smtplib.SMTP(_SMTP_HOST, _SMTP_PORT, timeout=10) as server:
+        with smtplib.SMTP(_SMTP_HOST, _SMTP_PORT, timeout=20) as server:
+            logger.info("MAIL:Sending EHLO")
             server.ehlo()
-            if _SMTP_PORT != 25:
-                server.starttls()
-                server.ehlo()
+            # Try STARTTLS on port 25 too (it's available)
+            if _SMTP_PORT == 25 or _SMTP_PORT == 587:
+                logger.info("MAIL:Attempting STARTTLS")
+                try:
+                    server.starttls()
+                    server.ehlo()
+                    logger.info("MAIL:STARTTLS successful")
+                except Exception as e:
+                    logger.info(f"MAIL:STARTTLS not available or failed: {e}")
             if _SMTP_USER and _SMTP_PASS:
+                logger.info(f"MAIL:Logging in as {_SMTP_USER}")
                 server.login(_SMTP_USER, _SMTP_PASS)
+            else:
+                logger.info("MAIL:No credentials - relying on mynetworks")
+            logger.info(f"MAIL:Sending mail from {_FROM_EMAIL} to {to}")
             server.sendmail(_FROM_EMAIL, to, msg.as_string())
+            logger.info("MAIL:SENDMAIL completed successfully")
 
-        logger.info(f"Email sent to {to}: {subject}")
+        logger.info(f"MAIL:Email sent to {to}: {subject}")
         return True
     except Exception:
-        logger.warning(f"Failed to send email to {to}", exc_info=True)
+        logger.warning(f"MAIL:Failed to send email to {to}", exc_info=True)
         return False
 
 
