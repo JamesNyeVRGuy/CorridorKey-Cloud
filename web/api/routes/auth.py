@@ -436,10 +436,6 @@ def signup_with_invite(req: SignupRequest):
             otp_body = json.dumps(
                 {
                     "email": req.email,
-                    "create_user": False,  # User already exists
-                    "data": {
-                        "name": req.name,
-                    },
                 }
             ).encode()
 
@@ -452,6 +448,7 @@ def signup_with_invite(req: SignupRequest):
                 },
                 method="POST",
             )
+            
             with urllib.request.urlopen(otp_req, timeout=10) as resp:
                 logger.info(f"MAIL:Email sent to {req.email} (confirmation)")
                 user_data = json.loads(resp.read())
