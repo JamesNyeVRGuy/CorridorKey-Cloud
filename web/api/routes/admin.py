@@ -85,11 +85,17 @@ def approve_user(user_id: str, request: Request):
     audit_from_request("user.approved", request, target_type="user", target_id=user_id, details={"email": user.email})
 
     # Send approval notification email
-    from ..email import send_approval_email
+    from ..email import send_approval_email, send_approval_otp_email
 
     email_sent = send_approval_email(user.email, user.name)
+    otp_email_sent = send_approval_otp_email(user.email)
 
-    return {"status": "approved", "email_sent": email_sent, "user": updated.to_dict() if updated else None}
+    return {
+        "status": "approved",
+        "email_sent": email_sent,
+        "otp_email_sent": otp_email_sent,
+        "user": updated.to_dict() if updated else None,
+    }
 
 
 @router.post("/users/{user_id}/reject")

@@ -7,12 +7,12 @@ gpu_subprocess module. Single-GPU mode runs inference in-process.
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import os
 import shutil
 import socket
 import tempfile
 import threading
-from multiprocessing import Process, Queue
 from pathlib import Path
 
 import httpx
@@ -23,6 +23,10 @@ from . import config
 from .file_transfer import FileTransfer
 from .log_buffer import buffer as log_buffer
 from .weight_sync import sync_weights
+
+# Use 'spawn' start method to avoid CUDA re-initialization errors on Linux/Docker.
+# fork() copies the parent's CUDA context, which can't be re-initialized in children.
+_mp = multiprocessing.get_context("spawn")
 
 logger = logging.getLogger(__name__)
 
@@ -597,10 +601,10 @@ class NodeAgent:
         """Run job in a subprocess on a specific GPU."""
         from web.shared.gpu_subprocess import gpu_worker_main
 
-        task_queue: Queue = Queue()
-        result_queue: Queue = Queue()
+        task_queue = _mp.Queue()
+        result_queue = _mp.Queue()
 
-        proc = Process(target=gpu_worker_main, args=(gpu_index, task_queue, result_queue), daemon=True)
+        proc = _mp.Process(target=gpu_worker_main, args=(gpu_index, task_queue, result_queue), daemon=True)
         proc.start()
 
         # Wait for ready

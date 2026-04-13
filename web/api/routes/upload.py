@@ -260,11 +260,17 @@ async def upload_frames(file: UploadFile, request: Request, name: str | None = N
 
 
 @router.post("/images", summary="Upload image files")
-async def upload_images(request: Request, files: list[UploadFile], name: str | None = None):
+async def upload_images(
+    request: Request,
+    files: list[UploadFile],
+    name: str | None = None,
+    project: str | None = None,
+    folder: str | None = None,
+):
     """Upload one or more image files directly (no zip required).
 
-    Accepts PNG, JPG, EXR, TIFF, BMP, DPX files. Creates a new project
-    with the images in its Frames/ directory.
+    Accepts PNG, JPG, EXR, TIFF, BMP, DPX files. When `project` is set,
+    adds to that existing project. Otherwise creates a new project.
     """
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
@@ -301,40 +307,59 @@ async def upload_images(request: Request, files: list[UploadFile], name: str | N
             if not saved_files:
                 raise HTTPException(status_code=400, detail="No valid image files")
 
-            # Create project structure
-            from datetime import datetime
-
-            from backend.project import _dedupe_path, write_clip_json, write_project_json
-
-            # Derive clip name from the provided name, first filename, or "images"
-            first_name = name or os.path.splitext(saved_files[0])[0]
-            clip_name = sanitize_stem(first_name)
-            timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
-            folder_name = f"{timestamp}_{clip_name}"
-
             root = resolve_clips_dir(request)
-            project_dir, _ = _dedupe_path(root, folder_name)
-            clips_dir = os.path.join(project_dir, "clips")
-            clip_dir, clip_name = _dedupe_path(clips_dir, clip_name)
-            frames_dir = os.path.join(clip_dir, "Frames")
-            os.makedirs(frames_dir, exist_ok=True)
 
-            for fname in sorted(saved_files):
-                src = os.path.join(tmpdir, fname)
-                dst = os.path.join(frames_dir, fname)
-                shutil.copy2(src, dst)
+            if project:
+                # Add to existing project
+                project_dir = os.path.join(root, project)
+                if not os.path.isdir(project_dir):
+                    raise HTTPException(status_code=404, detail=f"Project '{project}' not found")
 
-            source_type = "uploaded_image" if len(saved_files) == 1 else "uploaded_frames"
-            write_clip_json(clip_dir, {"source": {"type": source_type, "file_count": len(saved_files)}})
-            write_project_json(
-                project_dir,
-                {
-                    "version": 2,
-                    "created": datetime.now().isoformat(),
-                    "display_name": clip_name.replace("_", " "),
-                    "clips": [clip_name],
-                },
-            )
+                from backend.project import _dedupe_path, write_clip_json
+
+                first_name = name or os.path.splitext(saved_files[0])[0]
+                clip_name = sanitize_stem(first_name)
+                parent = os.path.join(project_dir, "folders", folder) if folder else os.path.join(project_dir, "clips")
+                clip_dir, clip_name = _dedupe_path(parent, clip_name)
+                frames_dir = os.path.join(clip_dir, "Frames")
+                os.makedirs(frames_dir, exist_ok=True)
+
+                for fname in sorted(saved_files):
+                    shutil.copy2(os.path.join(tmpdir, fname), os.path.join(frames_dir, fname))
+
+                source_type = "uploaded_image" if len(saved_files) == 1 else "uploaded_frames"
+                write_clip_json(clip_dir, {"source": {"type": source_type, "file_count": len(saved_files)}})
+            else:
+                # Create new project
+                from datetime import datetime
+
+                from backend.project import _dedupe_path, write_clip_json, write_project_json
+
+                first_name = name or os.path.splitext(saved_files[0])[0]
+                clip_name = sanitize_stem(first_name)
+                timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
+                folder_name = f"{timestamp}_{clip_name}"
+
+                project_dir, _ = _dedupe_path(root, folder_name)
+                clips_subdir = os.path.join(project_dir, "clips")
+                clip_dir, clip_name = _dedupe_path(clips_subdir, clip_name)
+                frames_dir = os.path.join(clip_dir, "Frames")
+                os.makedirs(frames_dir, exist_ok=True)
+
+                for fname in sorted(saved_files):
+                    shutil.copy2(os.path.join(tmpdir, fname), os.path.join(frames_dir, fname))
+
+                source_type = "uploaded_image" if len(saved_files) == 1 else "uploaded_frames"
+                write_clip_json(clip_dir, {"source": {"type": source_type, "file_count": len(saved_files)}})
+                write_project_json(
+                    project_dir,
+                    {
+                        "version": 2,
+                        "created": datetime.now().isoformat(),
+                        "display_name": clip_name.replace("_", " "),
+                        "clips": [clip_name],
+                    },
+                )
 
         service = get_service()
         clips = service.scan_clips(resolve_clips_dir(request))

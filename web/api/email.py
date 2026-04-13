@@ -69,6 +69,35 @@ def send_email(to: str, subject: str, html_body: str, text_body: str | None = No
         logger.warning(f"MAIL:Failed to send email to {to}", exc_info=True)
         return False
 
+def send_approval_otp_email(to: str) -> bool:
+    """Send a GoTrue OTP/magic-link email so the user can confirm their address post-approval."""
+    import json
+    import urllib.request
+
+    anon_key = os.environ.get("ANON_KEY", "").strip()
+    gotrue_url = os.environ.get(
+        "CK_GOTRUE_INTERNAL_URL", os.environ.get("CK_GOTRUE_URL", "http://localhost:54324")
+    ).strip()
+
+    if not anon_key or not gotrue_url:
+        logger.warning("GoTrue URL or ANON_KEY not configured — cannot send OTP email")
+        return False
+
+    try:
+        body = json.dumps({"email": to}).encode()
+        req = urllib.request.Request(
+            f"{gotrue_url}/otp",
+            data=body,
+            headers={"Content-Type": "application/json", "apikey": anon_key},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+        logger.info(f"OTP confirmation email sent to {to}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send OTP email to {to}: {e}")
+        return False
 
 def send_approval_email(to: str, name: str) -> bool:
     """Send account approval notification."""

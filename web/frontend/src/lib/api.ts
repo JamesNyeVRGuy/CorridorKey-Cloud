@@ -336,10 +336,13 @@ export const api = {
 			const params = name ? `?name=${encodeURIComponent(name)}` : '';
 			return uploadRequest(`/api/upload/frames${params}`, form, onProgress);
 		},
-		images: async (files: File[], name?: string, onProgress?: UploadProgressFn): Promise<{ status: string; clips: Clip[]; frame_count: number }> => {
+		images: async (files: File[], project?: string, onProgress?: UploadProgressFn, folder?: string): Promise<{ status: string; clips: Clip[]; frame_count: number }> => {
 			const form = new FormData();
 			for (const f of files) form.append('files', f);
-			const params = name ? `?name=${encodeURIComponent(name)}` : '';
+			const qs = new URLSearchParams();
+			if (project) qs.set('project', project);
+			if (folder) qs.set('folder', folder);
+			const params = qs.toString() ? `?${qs}` : '';
 			return uploadRequest(`/api/upload/images${params}`, form, onProgress);
 		},
 		mask: async (clipName: string, file: File): Promise<unknown> => {

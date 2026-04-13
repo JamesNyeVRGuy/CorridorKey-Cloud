@@ -7,11 +7,15 @@ CorridorKeyService independently. OOM on one GPU doesn't crash others.
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import threading
-from multiprocessing import Process, Queue
 
 from device_utils import enumerate_gpus
 from web.shared.gpu_subprocess import _serialize_job, gpu_worker_main
+
+# Use 'spawn' start method to avoid CUDA re-initialization errors on Linux/Docker.
+# fork() copies the parent's CUDA context, which can't be re-initialized in children.
+_mp = multiprocessing.get_context("spawn")
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +25,13 @@ class GPUWorkerSlot:
 
     def __init__(self, gpu_index: int):
         self.gpu_index = gpu_index
-        self.task_queue: Queue = Queue()
-        self.process: Process | None = None
+        self.task_queue: _mp.Queue = _mp.Queue()
+        self.process: _mp.Process | None = None
         self.busy = False
         self.current_job_id: str | None = None
 
-    def start(self, result_queue: Queue) -> None:
-        self.process = Process(
+    def start(self, result_queue: _mp.Queue) -> None:
+        self.process = _mp.Process(
             target=gpu_worker_main,
             args=(self.gpu_index, self.task_queue, result_queue),
             daemon=True,
@@ -63,7 +67,7 @@ class GPUWorkerPool:
             gpus = enumerate_gpus()
             gpu_indices = [g.index for g in gpus] if gpus else [0]
 
-        self._result_queue: Queue = Queue()
+        self._result_queue: _mp.Queue = _mp.Queue()
         self._slots = [GPUWorkerSlot(i) for i in gpu_indices]
         self._lock = threading.Lock()
         self._result_thread: threading.Thread | None = None

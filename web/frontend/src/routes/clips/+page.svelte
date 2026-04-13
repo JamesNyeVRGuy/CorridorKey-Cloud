@@ -394,9 +394,9 @@
 
 			if (imageFiles.length > 0) {
 				const idx = pendingFiles.indexOf(imageFiles[0]);
-				const result = await api.upload.images(imageFiles, projectName || undefined, (loaded, total) => {
+				const result = await api.upload.images(imageFiles, targetProject || undefined, (loaded, total) => {
 					if (idx >= 0) uploadFileProgress[idx] = { ...uploadFileProgress[idx], progress: Math.round((loaded / total) * 100) };
-				});
+				}, targetFolder || undefined);
 				if (result?.clips) for (const c of result.clips) { if (c.name) lastUploadedClips.push(c.name); }
 				for (const f of imageFiles) {
 					const i = pendingFiles.indexOf(f);
