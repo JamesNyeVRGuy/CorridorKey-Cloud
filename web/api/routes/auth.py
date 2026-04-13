@@ -507,9 +507,8 @@ def open_register(req: RegisterRequest):
         "CK_GOTRUE_INTERNAL_URL", os.environ.get("CK_GOTRUE_URL", "http://localhost:54324")
     ).strip()
     service_key = os.environ.get("CK_SUPABASE_SERVICE_KEY", "").strip()
-    anon_key = os.environ.get("ANON_KEY", "").strip()
 
-    if not service_key or not anon_key:
+    if not service_key:
         raise HTTPException(
             status_code=500,
             detail="Server is not configured for open registration, check CK_SUPABASE_SERVICE_KEY and ANON_KEY",
@@ -545,29 +544,6 @@ def open_register(req: RegisterRequest):
             user_data = json.loads(resp.read())
             user_id = user_data.get("id", req.email)
 
-        # Trigger OTP/magic link email
-        otp_body = json.dumps(
-            {
-                "email": req.email,
-            }
-        ).encode()
-
-        otp_req = urllib.request.Request(
-            f"{gotrue_url}/otp",
-            data=otp_body,
-            headers={
-                "Content-Type": "application/json",
-                "apikey": anon_key,
-            },
-            method="POST",
-        )
-        logger.info(f"Triggering OTP email via GoTrue: {req.email}")
-
-        with urllib.request.urlopen(otp_req, timeout=10) as resp:
-            logger.info(f"MAIL:Email sent to {req.email} (confirmation)")
-            user_data = json.loads(resp.read())
-            user_id = user_data.get("id", req.email)
-            # Email Sent
     except Exception as e:
         error_msg = str(e)
         if "already been registered" in error_msg.lower() or "duplicate" in error_msg.lower():
