@@ -69,6 +69,7 @@ def send_email(to: str, subject: str, html_body: str, text_body: str | None = No
         logger.warning(f"MAIL:Failed to send email to {to}", exc_info=True)
         return False
 
+
 def send_approval_otp_email(to: str) -> bool:
     """Send a GoTrue OTP/magic-link email so the user can confirm their address post-approval."""
     import json
@@ -98,6 +99,7 @@ def send_approval_otp_email(to: str) -> bool:
     except Exception as e:
         logger.error(f"Failed to send OTP email to {to}: {e}")
         return False
+
 
 def send_approval_email(to: str, name: str) -> bool:
     """Send account approval notification."""
