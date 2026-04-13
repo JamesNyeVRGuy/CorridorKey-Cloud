@@ -82,6 +82,15 @@ async function uploadRequest<T>(path: string, form: FormData, onProgress?: Uploa
 		}
 		xhr.onload = () => {
 			if (xhr.status === 413) {
+				try {
+					const body = JSON.parse(xhr.responseText);
+					if (body.detail) {
+						reject(new Error(body.detail));
+						return;
+					}
+				} catch {
+					// fall through to generic message
+				}
 				reject(new Error('File too large. The server or CDN may limit upload size (Cloudflare free: 100MB). Try compressing your video or using a ZIP of frames.'));
 				return;
 			}
