@@ -9,21 +9,30 @@ authors = [{ name = "Corridor Digital" }]
 
 dependencies = [
     # Core inference
-    "torch==2.8.0",
-    "torchvision==0.23.0",
+    # NOTE: torch and torchvision are intentionally NOT listed here.
+    #
+    # They must be supplied by one of the hardware extras below, or — when
+    # building against the NVIDIA PyTorch container — they are already present
+    # in the system Python and are injected into the venv via
+    # --system-site-packages.  Pinning them here would cause uv to attempt a
+    # re-install from PyPI and conflict with whatever the container ships.
+    #
+    #   Standalone CUDA:       uv sync --extra cuda
+    #   ROCm / AMD:            uv sync --extra rocm
+    #   NVIDIA container:      uv sync  (no extra; torch comes from system)
     "timm==1.0.24",
     "numpy",
     "opencv-python",
     "tqdm",
     "setuptools",
-    # Triton fix for Windows
-    # There might still be issues though https://github.com/triton-lang/triton-windows?tab=readme-ov-file#windows-file-path-length-limit-260-causes-compilation-failure
+    # Triton fix for Windows (conditional, won't install on Linux/aarch64)
     "triton-windows==3.4.0.post21 ; sys_platform == 'win32'",
     # GVM alpha hint generator
-    "diffusers",
+    #pinned for aarch64 support
+    "diffusers>=0.27",
     "transformers",
     "accelerate",
-    "peft",
+    "peft>=0.17.0",
     "av",
     "Pillow",
     "PIMS",
@@ -36,7 +45,7 @@ dependencies = [
     "kornia",
     # CLI tools (huggingface-hub is also a transitive dep, but must be direct
     # so that uv installs the "hf" console-script entry point)
-    "huggingface-hub",
+    "huggingface-hub>=0.23",
     # CLI framework + terminal output
     "typer>=0.12",
     "rich>=13",
@@ -50,6 +59,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Standalone CUDA build (pulls wheels from the PyTorch CUDA index).
+# Used by the uv-base Dockerfile path and local developer installs.
 cuda = [
     "torch==2.8.0",
     "torchvision==0.23.0",
@@ -75,6 +86,11 @@ rocm = [
 s3 = [
     "boto3>=1.34",
 ]
+# Marker extra for the NVIDIA-container build path.
+# No packages — torch/torchvision come from the container's system Python and
+# are visible through --system-site-packages.  Declaring this extra lets CI
+# and humans signal intent without accidentally pulling PyPI torch.
+system-torch = []
 
 [dependency-groups]
 dev = ["pytest", "pytest-cov", "ruff", "hypothesis", "fakeredis[lua]"]
@@ -108,27 +124,22 @@ markers = [
     "slow: long-running test",
     "mlx: requires Apple Silicon with MLX installed",
 ]
-env = ["OPENCV_IO_ENABLE_OPENEXR=1", ]
+env = ["OPENCV_IO_ENABLE_OPENEXR=1"]
 addopts = "--tb=short"
 
 [tool.coverage.run]
 branch = true
-# "." covers root-level modules (clip_manager.py, corridorkey_cli.py once PR #8 merges).
-# Third-party and non-library code is excluded via omit.
 source = ["CorridorKeyModule", "."]
 omit = [
     "gvm_core/*",
     "VideoMaMaInferenceModule/*",
     "tests/*",
-    "test_vram.py", # manual GPU smoke test, not part of the pytest suite
+    "test_vram.py",
 ]
 
 [tool.uv]
 # Guard against transitive deps (diffusers, imageio, PIMS) silently pulling in
-# opencv-python-headless, which conflicts with opencv-python at the file level
-# (both install into the same cv2/ directory). If any future dep requests
-# opencv-python-headless, uv resolution will fail explicitly rather than
-# corrupting the environment.
+# opencv-python-headless, which conflicts with opencv-python at the file level.
 constraint-dependencies = [
     "opencv-python-headless==99999",
 ]
@@ -137,12 +148,13 @@ conflicts = [
         { extra = "cuda" },
         { extra = "mlx" },
         { extra = "rocm" },
+        { extra = "system-torch" },
     ],
 ]
 
 [[tool.uv.index]]
 name = "pytorch"
-url = "https://download.pytorch.org/whl/cu128" # CUDA 12.6 doesn't support RTX 5000 Series
+url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 extra = "cuda"
 
@@ -153,7 +165,7 @@ explicit = true
 extra = "rocm"
 
 [tool.uv.sources]
-# Use Hiera fix in order to utilize the FlashAttention Kernel
+# Hiera fix for FlashAttention kernel
 timm = { git = "https://github.com/Raiden129/pytorch-image-models-fix", branch = "fix/hiera-flash-attention-global-4d" }
 torch = [
     { index = "pytorch", extra = "cuda" },

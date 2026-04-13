@@ -1,0 +1,166 @@
+# Lightweight node agent image for CorridorKey distributed processing.
+#
+# Weights are NOT baked in — the node auto-downloads them from the main
+# server on first start. Just set CK_MAIN_URL and run.
+#
+# Security: runs as non-root (uid 1000), agent refuses to run as root.
+#
+# ┌──────────────────────────────────────────────────────────────────┐
+# │  GPU_VENDOR options                                              │
+# ├──────────────────────────┬───────────────────────────────────────┤
+# │ nvidia (default)         │ Standalone CUDA build. uv pulls torch │
+# │                          │ from the PyTorch CUDA index.          │
+# │                          │ Supports linux/amd64 only.            │
+# ├──────────────────────────┼───────────────────────────────────────┤
+# │ nvidia-container         │ Uses nvcr.io/nvidia/pytorch as base.  │
+# │                          │ torch/torchvision come from the       │
+# │                          │ container; uv manages the rest via    │
+# │                          │ --system-site-packages.               │
+# │                          │ Supports linux/amd64 AND linux/arm64  │
+# │                          │ (Grace-Hopper, Orin, etc.).           │
+# ├──────────────────────────┼───────────────────────────────────────┤
+# │ amd                      │ ROCm build. torch pulled from the     │
+# │                          │ PyTorch ROCm index. Supports amd64.   │
+# └──────────────────────────┴───────────────────────────────────────┘
+#
+# Build (standalone CUDA): docker build -f web/Dockerfile.node -t corridorkey-node:nvidia .
+# Build (NVIDIA container): docker build -f web/Dockerfile.node \
+#     --build-arg GPU_VENDOR=nvidia-container \
+#     --build-arg PYTORCH_CONTAINER_VERSION=25.04 \
+#     --platform linux/arm64 \          # or linux/amd64
+#     -t corridorkey-node:nvcontainer .
+# Build (AMD):     docker build -f web/Dockerfile.node --build-arg GPU_VENDOR=amd -t corridorkey-node:amd .
+#
+# Run (standalone CUDA):    docker run --gpus all -e CK_MAIN_URL=http://host:3000 corridorkey-node:nvidia
+# Run (NVIDIA container):   docker run --gpus all -e CK_MAIN_URL=http://host:3000 corridorkey-node:nvcontainer
+# Run (AMD):                docker run --device /dev/kfd --device /dev/dri -e CK_MAIN_URL=http://host:3000 corridorkey-node:amd
+
+ARG GPU_VENDOR=nvidia
+# Only consumed by the nvidia-container stage; ignored for other vendors.
+ARG PYTORCH_CONTAINER_VERSION=26.03
+
+# ── Stage aliases for base image selection ────────────────────────────────────
+# BuildKit only materialises the stage that is actually reached via
+# FROM base-${GPU_VENDOR}, so unused stages incur no pull cost.
+
+FROM ghcr.io/astral-sh/uv:0.7-python3.11-bookworm-slim AS base-nvidia
+FROM ghcr.io/astral-sh/uv:0.7-python3.11-bookworm-slim AS base-amd
+
+# The NVIDIA PyTorch container is published for linux/amd64 and linux/arm64.
+# torch + torchvision + CUDA libs are pre-installed in the system Python.
+# We inject uv so the rest of the dependency graph is still managed here.
+FROM nvcr.io/nvidia/pytorch:${PYTORCH_CONTAINER_VERSION}-py3 AS base-nvidia-container
+COPY --from=ghcr.io/astral-sh/uv:0.7 /uv /usr/local/bin/uv
+
+# ── Active runtime (selected by GPU_VENDOR) ───────────────────────────────────
+# Re-declare ARG so it survives the FROM boundary.
+ARG GPU_VENDOR=nvidia
+FROM base-${GPU_VENDOR} AS runtime
+
+WORKDIR /app
+
+# Create non-root user (uid 1000 is safe on all three base images).
+# Changed to 1001 to avoid collision with user created by nvcr.io/nvidia/pytorch
+RUN useradd --create-home --uid 1001 nodeuser
+
+# Runtime deps for OpenCV and video I/O.
+# The NVIDIA container already ships git, gcc, libgl1, etc., but apt is
+# idempotent so this is safe to run on all variants.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    gcc \
+    libc6-dev \
+    ffmpeg \
+    libgl1 \
+    libglib2.0-0 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# ── Dependency installation (deps layer, project source excluded) ─────────────
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    if [ "$GPU_VENDOR" = "amd" ]; then \
+        # ROCm: sync base deps then overlay torch from the ROCm index.
+        uv sync --frozen --no-dev --no-install-project && \
+        uv pip install torch==2.8.0 torchvision==0.23.0 \
+            --index-url https://download.pytorch.org/whl/rocm6.3 && \
+        uv pip install pyrsmi; \
+    elif [ "$GPU_VENDOR" = "nvidia-container" ]; then \
+        # NVIDIA container: create a venv that inherits the container's
+        # system-level torch/torchvision/CUDA bindings, then install the
+        # rest of the dependency graph on top.
+        # --python resolves to whichever Python the container ships (3.12 in
+        # 25.x containers), keeping the venv and system Python in sync.
+	# Upgrading mismatch system versions from nvidia container
+	#uv pip install --upgrade "numpy>=2.0.0" "huggingface-hub>=0.23" "diffusers>=0.27" "peft>=0.17.0" && \
+        uv venv --python "$(python3 -c 'import sys; print(sys.executable)')" \
+                 --system-site-packages .venv && \
+        uv sync --no-dev --no-install-project \
+            --no-install-package torch \
+            --no-install-package torchvision; \
+    else \
+        # Standalone CUDA: pull torch from the PyTorch CUDA index (amd64 only).
+        uv sync --frozen --no-dev --extra cuda --no-install-project; \
+    fi
+
+# ── Project source ────────────────────────────────────────────────────────────
+COPY --chown=nodeuser:nodeuser backend/ backend/
+COPY --chown=nodeuser:nodeuser device_utils.py ./
+COPY --chown=nodeuser:nodeuser CorridorKeyModule/ CorridorKeyModule/
+COPY --chown=nodeuser:nodeuser gvm_core/ gvm_core/
+COPY --chown=nodeuser:nodeuser VideoMaMaInferenceModule/ VideoMaMaInferenceModule/
+COPY --chown=nodeuser:nodeuser BiRefNetModule/ BiRefNetModule/
+COPY --chown=nodeuser:nodeuser web/__init__.py web/__init__.py
+COPY --chown=nodeuser:nodeuser web/shared/ web/shared/
+COPY --chown=nodeuser:nodeuser web/node/ web/node/
+COPY --chown=nodeuser:nodeuser README.md ./
+
+# ── Project self-install (now that source is present) ────────────────────────
+RUN --mount=type=cache,target=/root/.cache/uv \
+    if [ "$GPU_VENDOR" = "amd" ]; then \
+        uv sync --frozen --no-dev; \
+    elif [ "$GPU_VENDOR" = "nvidia-container" ]; then \
+        uv sync --no-dev \
+            --no-install-package torch \
+            --no-install-package torchvision; \
+    else \
+        uv sync --frozen --no-dev --extra cuda; \
+    fi
+
+# ── Runtime directories + ownership ──────────────────────────────────────────
+RUN mkdir -p CorridorKeyModule/checkpoints \
+    /app/.cache/corridorkey \
+    /app/.cache/matplotlib \
+    gvm_core/weights \
+    VideoMaMaInferenceModule/checkpoints \
+    /tmp/ck-work && \
+    chown -R nodeuser:nodeuser \
+    CorridorKeyModule/checkpoints \
+    gvm_core/weights \
+    VideoMaMaInferenceModule/checkpoints \
+    /tmp/ck-work \
+    /app/.cache/corridorkey \
+    /app/.cache/matplotlib \
+    .venv && \
+    # Fix ownership of the project dist-info regardless of Python version
+    # (avoids hardcoding python3.11 — the NVIDIA container ships 3.12+).
+    find .venv/lib -name "corridorkey-*.dist-info" \
+        -exec chown -R nodeuser:nodeuser {} + 2>/dev/null || true
+
+# ── Runtime ───────────────────────────────────────────────────────────────────
+USER nodeuser
+
+ARG BUILD_COMMIT=dev
+ARG BUILD_NUMBER=0
+ENV CK_BUILD_COMMIT=${BUILD_COMMIT}
+ENV CK_BUILD_NUMBER=${BUILD_NUMBER}
+ENV CK_MAIN_URL=http://localhost:3000
+ENV CK_NODE_NAME=docker-node
+ENV CK_NODE_GPUS=auto
+ENV TORCHINDUCTOR_CACHE_DIR=/app/.cache/corridorkey/inductor
+ENV MPLCONFIGDIR=/app/.cache/matplotlib
+ENV CK_TEMP_DIR=/tmp/ck-work
+ENV CK_GPU_VENDOR=${GPU_VENDOR}
+
+CMD ["/app/.venv/bin/python", "-m", "web.node"]

@@ -151,7 +151,8 @@ def _enumerate_nvidia() -> list[GPUInfo] | None:
                     )
                 )
         return gpus
-    except (FileNotFoundError, TimeoutExpired):
+    # Catch error on conversion from bad nvidia-smi return so it falls through to torch.api fallback
+    except (FileNotFoundError, TimeoutExpired, ValueError):
         return None
 
 
@@ -408,7 +409,8 @@ def check_gpu_available(gpu_index: int = 0, min_free_gb: float = 0.0) -> tuple[b
                 if min_free_gb > 0 and free_gb < min_free_gb:
                     return False, f"GPU {gpu_index} low VRAM ({free_gb:.1f}GB free, need {min_free_gb:.1f}GB)"
                 return True, "ok"
-    except (FileNotFoundError, TimeoutExpired):
+    # Catch error on conversion from bad nvidia-smi return so it falls through to torch.api fallback
+    except (FileNotFoundError, TimeoutExpired, ValueError):
         pass
 
     # Try AMD
@@ -429,6 +431,25 @@ def check_gpu_available(gpu_index: int = 0, min_free_gb: float = 0.0) -> tuple[b
                 return True, "ok"
     except (FileNotFoundError, TimeoutExpired, Exception):
         pass
+
+    # Try PyTorch
+    try:
+	# Set the device to query
+        device = torch.device(f'cuda:{gpu_index}')
+
+        # mem_get_info returns (free_bytes, total_bytes)
+        free_bytes, total_bytes = torch.cuda.mem_get_info(device)
+        free_gb = free_bytes / (1024**3)
+
+        # Note: PyTorch does not provide utility %
+        # We skip the "utilization > 50" check in the fallback
+        if min_free_gb > 0 and free_gb < min_free_gb:
+            return False, f"GPU {gpu_index} low VRAM (PyTorch: {free_gb:.1f}GB free)"
+
+        return True, "ok"
+
+    except RuntimeError as e:
+        return False, f"GPU {gpu_index} inaccessible via PyTorch: {str(e)}"
 
     return True, "gpu monitoring unavailable"
 
