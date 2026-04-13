@@ -41,18 +41,50 @@ linear_pixel_arrays = arrays(
         st.integers(min_value=4, max_value=16),
         st.just(3),
     ),
-    elements=st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False),
+    elements=st.floats(
+        min_value=0.0, 
+        max_value=1.0, 
+        allow_nan=False, 
+        allow_infinity=False,
+        # Match float width to width in NumPy array
+        width = 32
+    ),
 )
 
 # Strategy that specifically targets the sRGB piecewise threshold region
 # Values near 0.0031308 where naive pow(1/2.2) diverges from piecewise sRGB
 threshold_pixel_values = st.one_of(
     # Values below the threshold (linear segment of sRGB)
-    st.floats(min_value=0.0, max_value=0.0031308, allow_nan=False, allow_infinity=False),
+    st.floats(
+        min_value=0.0, 
+        # Use full 32-bit min value to satisfy Hypothesis
+        max_value=0.0031308000907301903, 
+        allow_nan=False, 
+        allow_infinity=False,
+        # Match float width to width in NumPy array
+        width = 32
+    ),
     # Values right around the threshold
-    st.floats(min_value=0.002, max_value=0.005, allow_nan=False, allow_infinity=False),
+    st.floats(
+        # Use full 32-bit min value to satisfy Hypothesis
+        min_value=0.0020000000949949026, 
+        # Use full 32-bit min value to satisfy Hypothesis
+        max_value=0.004999999888241291, 
+        allow_nan=False, 
+        allow_infinity=False,
+        # Match float width to width in NumPy array
+        width = 32
+    ),
     # Values above the threshold (power segment of sRGB)
-    st.floats(min_value=0.0031308, max_value=1.0, allow_nan=False, allow_infinity=False),
+    st.floats(
+        # Use full 32-bit min value to satisfy Hypothesis
+        min_value=0.0031308000907301903, 
+        max_value=1.0, 
+        allow_nan=False, 
+        allow_infinity=False,
+        # Match float width to width in NumPy array
+        width = 32
+    ),
 )
 
 
