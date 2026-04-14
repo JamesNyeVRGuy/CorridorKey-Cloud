@@ -130,47 +130,97 @@ class UserStore:
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_ck_users_email ON ck.users (email)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_ck_users_tier ON ck.users (tier)")
 
-                # Copy legacy blob → ck.users. Preserve whatever data the blob has.
+                # Load the legacy blob. Records may be keyed by UUID (post
+                # CRKY-61) or by email (pre CRKY-61, where set_tier could
+                # only write the blob — the auth.users mirror failed
+                # because email can't cast to uuid). We have to check both
+                # when merging, otherwise pre-CRKY-61 approvals show up as
+                # pending and users get locked out.
                 cur.execute("SELECT value FROM ck.settings WHERE key = 'users'")
                 row = cur.fetchone()
+                blob: dict = {}
                 if row and row[0]:
-                    legacy: dict = row[0] if isinstance(row[0], dict) else json.loads(row[0])
-                    for rec in legacy.values():
-                        if not rec.get("user_id") or not rec.get("email"):
-                            continue
-                        cur.execute(
-                            f"""INSERT INTO ck.users ({_COLS})
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                                ON CONFLICT (user_id) DO NOTHING""",
-                            (
-                                rec.get("user_id"),
-                                rec.get("email"),
-                                rec.get("tier") or "pending",
-                                rec.get("name") or "",
-                                rec.get("company") or "",
-                                rec.get("role") or "",
-                                rec.get("use_case") or "",
-                                float(rec.get("signed_up_at") or 0),
-                                float(rec.get("approved_at") or 0),
-                                rec.get("approved_by") or "",
-                            ),
-                        )
+                    blob = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+                blob_by_email: dict = {}
+                for rec in blob.values():
+                    if isinstance(rec, dict) and rec.get("email"):
+                        blob_by_email[rec["email"]] = rec
 
-                # Backfill from auth.users for anyone still missing.
-                # This is what recovers users lost to the old blob race.
+                # Single-pass upsert: for every auth.users row, merge any
+                # blob data we have for it (by UUID or email) and write it
+                # into ck.users. ON CONFLICT DO UPDATE promotes rows the
+                # previous migration left stuck at 'pending' to their real
+                # tier from the blob.
                 cur.execute("""
-                    INSERT INTO ck.users
-                        (user_id, email, tier, name, signed_up_at)
-                    SELECT
-                        id::text,
-                        email,
-                        COALESCE(raw_app_meta_data->>'tier', 'pending'),
-                        COALESCE(raw_user_meta_data->>'name', ''),
-                        EXTRACT(EPOCH FROM created_at)
+                    SELECT id::text, email, raw_app_meta_data, raw_user_meta_data, created_at
                     FROM auth.users
                     WHERE email IS NOT NULL
-                    ON CONFLICT (user_id) DO NOTHING
                 """)
+                for uuid, email, app_meta, user_meta, created_at in cur.fetchall():
+                    app_meta = app_meta or {}
+                    user_meta = user_meta or {}
+                    rec = blob.get(uuid) or blob_by_email.get(email) or {}
+                    tier = rec.get("tier") or app_meta.get("tier") or "pending"
+                    name = rec.get("name") or user_meta.get("name") or ""
+                    signed_up_ts = float(rec.get("signed_up_at") or 0)
+                    if signed_up_ts == 0 and created_at is not None:
+                        signed_up_ts = created_at.timestamp()
+                    cur.execute(
+                        f"""INSERT INTO ck.users ({_COLS})
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (user_id) DO UPDATE SET
+                                email = EXCLUDED.email,
+                                tier = CASE
+                                    WHEN ck.users.tier = 'pending' AND EXCLUDED.tier != 'pending'
+                                        THEN EXCLUDED.tier
+                                    ELSE ck.users.tier
+                                END,
+                                name = CASE
+                                    WHEN ck.users.name = '' AND EXCLUDED.name != ''
+                                        THEN EXCLUDED.name
+                                    ELSE ck.users.name
+                                END,
+                                company = CASE
+                                    WHEN ck.users.company = '' AND EXCLUDED.company != ''
+                                        THEN EXCLUDED.company
+                                    ELSE ck.users.company
+                                END,
+                                role = CASE
+                                    WHEN ck.users.role = '' AND EXCLUDED.role != ''
+                                        THEN EXCLUDED.role
+                                    ELSE ck.users.role
+                                END,
+                                use_case = CASE
+                                    WHEN ck.users.use_case = '' AND EXCLUDED.use_case != ''
+                                        THEN EXCLUDED.use_case
+                                    ELSE ck.users.use_case
+                                END,
+                                approved_at = GREATEST(ck.users.approved_at, EXCLUDED.approved_at),
+                                approved_by = CASE
+                                    WHEN ck.users.approved_by = '' AND EXCLUDED.approved_by != ''
+                                        THEN EXCLUDED.approved_by
+                                    ELSE ck.users.approved_by
+                                END
+                        """,
+                        (
+                            uuid,
+                            email,
+                            tier,
+                            name,
+                            rec.get("company") or "",
+                            rec.get("role") or "",
+                            rec.get("use_case") or "",
+                            signed_up_ts,
+                            float(rec.get("approved_at") or 0),
+                            rec.get("approved_by") or "",
+                        ),
+                    )
+
+                # Drop orphan rows inserted by the previous migration that
+                # were keyed by email instead of UUID. Their data has
+                # already been merged into the corresponding UUID row
+                # above via blob_by_email lookup.
+                cur.execute("DELETE FROM ck.users WHERE user_id LIKE '%@%'")
 
                 cur.close()
             self._migrated = True
