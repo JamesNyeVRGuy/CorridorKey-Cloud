@@ -218,9 +218,7 @@ class UserStore:
                     )
                     row = cur.fetchone()
                     if row is None:
-                        cur.execute(
-                            f"SELECT {_COLS} FROM ck.users WHERE user_id = %s", (user_id,)
-                        )
+                        cur.execute(f"SELECT {_COLS} FROM ck.users WHERE user_id = %s", (user_id,))
                         row = cur.fetchone()
                     cur.close()
                     if row is not None:
@@ -252,9 +250,7 @@ class UserStore:
             with get_pg_conn() as conn:
                 if conn is not None:
                     cur = conn.cursor()
-                    cur.execute(
-                        f"SELECT {_COLS} FROM ck.users WHERE user_id = %s", (user_id,)
-                    )
+                    cur.execute(f"SELECT {_COLS} FROM ck.users WHERE user_id = %s", (user_id,))
                     row = cur.fetchone()
                     cur.close()
                     return _row_to_record(row) if row else None
@@ -269,9 +265,7 @@ class UserStore:
             with get_pg_conn() as conn:
                 if conn is not None:
                     cur = conn.cursor()
-                    cur.execute(
-                        f"SELECT {_COLS} FROM ck.users WHERE email = %s LIMIT 1", (email,)
-                    )
+                    cur.execute(f"SELECT {_COLS} FROM ck.users WHERE email = %s LIMIT 1", (email,))
                     row = cur.fetchone()
                     cur.close()
                     return _row_to_record(row) if row else None
@@ -294,9 +288,7 @@ class UserStore:
                 if conn is not None:
                     cur = conn.cursor()
                     # Real UUID already present — nothing to do.
-                    cur.execute(
-                        f"SELECT {_COLS} FROM ck.users WHERE user_id = %s", (real_uuid,)
-                    )
+                    cur.execute(f"SELECT {_COLS} FROM ck.users WHERE user_id = %s", (real_uuid,))
                     row = cur.fetchone()
                     if row:
                         cur.close()
@@ -341,9 +333,7 @@ class UserStore:
                             (tier_filter,),
                         )
                     else:
-                        cur.execute(
-                            f"SELECT {_COLS} FROM ck.users ORDER BY signed_up_at DESC"
-                        )
+                        cur.execute(f"SELECT {_COLS} FROM ck.users ORDER BY signed_up_at DESC")
                     rows = cur.fetchall()
                     cur.close()
                     return [_row_to_record(r) for r in rows]
@@ -427,9 +417,7 @@ class UserStore:
             with get_pg_conn() as conn:
                 if conn is not None:
                     cur = conn.cursor()
-                    cur.execute(
-                        "DELETE FROM ck.users WHERE user_id = %s", (user_id,)
-                    )
+                    cur.execute("DELETE FROM ck.users WHERE user_id = %s", (user_id,))
                     deleted = cur.rowcount > 0
                     cur.close()
                     return deleted
