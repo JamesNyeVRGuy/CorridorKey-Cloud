@@ -368,11 +368,9 @@ def get_org_preferences(org_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Org not found")
     if not user.is_admin and not store.is_member(org_id, user.user_id):
         raise HTTPException(status_code=403, detail="Not a member of this org")
-    from ..database import get_storage
+    from ..org_prefs import get_preferences
 
-    all_prefs = get_storage().get_setting("org_preferences", {})
-    prefs = all_prefs.get(org_id, {})
-    return {"allow_shared_nodes": prefs.get("allow_shared_nodes", True)}
+    return get_preferences(org_id)
 
 
 @router.put("/{org_id}/preferences", dependencies=[Depends(require_authenticated)])
@@ -386,13 +384,6 @@ def update_org_preferences(org_id: str, req: OrgPreferencesUpdate, request: Requ
     # Only org owner or admin can change preferences
     if not user.is_admin and org.owner_id != user.user_id:
         raise HTTPException(status_code=403, detail="Only the org owner can change preferences")
-    from ..database import get_storage
+    from ..org_prefs import update_preferences
 
-    storage = get_storage()
-    all_prefs = storage.get_setting("org_preferences", {})
-    prefs = all_prefs.get(org_id, {})
-    if req.allow_shared_nodes is not None:
-        prefs["allow_shared_nodes"] = req.allow_shared_nodes
-    all_prefs[org_id] = prefs
-    storage.set_setting("org_preferences", all_prefs)
-    return prefs
+    return update_preferences(org_id, req.model_dump(exclude_none=True))

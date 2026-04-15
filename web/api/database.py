@@ -236,6 +236,10 @@ class PostgresBackend(StorageBackend):
                                 org_id TEXT NOT NULL,
                                 cidr TEXT NOT NULL,
                                 PRIMARY KEY (org_id, cidr));
+                            CREATE TABLE IF NOT EXISTS ck.org_preferences (
+                                org_id TEXT PRIMARY KEY,
+                                preferences JSONB NOT NULL DEFAULT '{}'::jsonb,
+                                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
                         """)
                         logger.info("Created ck schema and tables")
                     except Exception as schema_err:

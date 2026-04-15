@@ -14,7 +14,6 @@ from pydantic import BaseModel
 from backend.job_queue import JobStatus
 from backend.natural_sort import natsorted
 
-from ..database import get_storage
 from ..deps import get_node_state, get_queue, get_service
 from ..nodes import GPUSlot, NodeInfo, NodeSchedule
 from ..org_isolation import resolve_node_clips_dir
@@ -120,23 +119,25 @@ def _node_clips_dir(node_id: str, org_id: str | None = None, job_id: str | None 
 
 def _save_node_config(node_id: str, node: NodeInfo) -> None:
     """Persist UI-configurable node settings and write back to state backend."""
-    storage = get_storage()
-    configs = storage.get_setting("node_configs", {})
-    configs[node_id] = {
-        "paused": node.paused,
-        "visibility": node.visibility,
-        "schedule": node.schedule.to_dict(),
-        "accepted_types": node.accepted_types,
-    }
-    storage.set_setting("node_configs", configs)
+    from ..node_config_store import save_node_config
+
+    save_node_config(
+        node_id,
+        {
+            "paused": node.paused,
+            "visibility": node.visibility,
+            "schedule": node.schedule.to_dict(),
+            "accepted_types": node.accepted_types,
+        },
+    )
     get_node_state().update_node(node_id, node)
 
 
 def _restore_node_config(node: NodeInfo) -> None:
     """Restore persisted settings when a node re-registers."""
-    storage = get_storage()
-    configs = storage.get_setting("node_configs", {})
-    cfg = configs.get(node.node_id)
+    from ..node_config_store import load_node_config
+
+    cfg = load_node_config(node.node_id)
     if cfg:
         node.paused = cfg.get("paused", False)
         node.visibility = cfg.get("visibility", "private")
@@ -535,12 +536,9 @@ async def get_next_job(node_id: str, request: Request):
     # Shared nodes: build exclusion list of orgs that opted out
     exclude_orgs: set[str] = set()
     if node.visibility == "shared":
-        from ..database import get_storage
+        from ..org_prefs import get_orgs_disallowing_shared_nodes
 
-        org_prefs = get_storage().get_setting("org_preferences", {})
-        for oid, prefs in org_prefs.items():
-            if not prefs.get("allow_shared_nodes", True):
-                exclude_orgs.add(oid)
+        exclude_orgs.update(get_orgs_disallowing_shared_nodes())
 
     claim_org = node.org_id if node.visibility != "shared" else None
     job = queue.claim_job(
