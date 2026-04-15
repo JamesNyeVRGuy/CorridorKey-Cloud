@@ -49,7 +49,7 @@
 	let selectedUsers = $state<Set<string>>(new Set());
 	let bulkHours = $state('');
 	let bulkInProgress = $state(false);
-	let bulkResult = $state<{ msg: string; ok: boolean } | null>(null);
+	let bulkResult = $state<{ msg: string; ok: boolean; failures?: { org_id: string; error: string }[] } | null>(null);
 
 	let hasSelection = $derived(selectedUsers.size > 0);
 
@@ -78,23 +78,27 @@
 		const targets = users.filter(u => selectedUsers.has(u.user_id) && u.orgs?.length);
 		if (!targets.length) { bulkResult = { msg: 'No selected users have orgs', ok: false }; return; }
 
+		const orgIds = targets.map(u => u.orgs![0].org_id);
+
 		bulkInProgress = true;
 		bulkResult = null;
-		let ok = 0;
-		let fail = 0;
-		for (const u of targets) {
-			try {
-				await adminFetch('/api/admin/credits/grant', {
-					method: 'POST', body: JSON.stringify({ org_id: u.orgs![0].org_id, hours })
-				});
-				ok++;
-			} catch { fail++; }
+		try {
+			const res = await adminFetch('/api/admin/credits/grant/bulk', {
+				method: 'POST',
+				body: JSON.stringify({ org_ids: orgIds, hours }),
+			});
+			const sign = hours > 0 ? '+' : '';
+			const failures = (res.results ?? [])
+				.filter((r: any) => !r.ok)
+				.map((r: any) => ({ org_id: r.org_id, error: r.error || 'Unknown error' }));
+			bulkResult = {
+				msg: `${sign}${hours}h granted to ${res.granted} org${res.granted !== 1 ? 's' : ''}${res.failed ? `, ${res.failed} failed` : ''}`,
+				ok: res.failed === 0,
+				failures: failures.length > 0 ? failures : undefined,
+			};
+		} catch (e) {
+			bulkResult = { msg: e instanceof Error ? e.message : 'Bulk grant failed', ok: false };
 		}
-		const sign = hours > 0 ? '+' : '';
-		bulkResult = {
-			msg: `${sign}${hours}h granted to ${ok} user${ok !== 1 ? 's' : ''}${fail ? `, ${fail} failed` : ''}`,
-			ok: fail === 0,
-		};
 		bulkHours = '';
 		bulkInProgress = false;
 	}
@@ -340,6 +344,16 @@
 			{/if}
 			<button class="btn-ghost mono bulk-clear" onclick={clearSelection}>Clear</button>
 		</div>
+		{#if bulkResult?.failures && bulkResult.failures.length > 0}
+			<details class="bulk-failures">
+				<summary class="mono">Show {bulkResult.failures.length} failure{bulkResult.failures.length !== 1 ? 's' : ''}</summary>
+				<ul class="failure-list mono">
+					{#each bulkResult.failures as f}
+						<li><span class="failure-org">{f.org_id}</span>: {f.error}</li>
+					{/each}
+				</ul>
+			</details>
+		{/if}
 	{/if}
 
 	<!-- User list -->
@@ -558,6 +572,15 @@
 	.bulk-count { font-size: 11px; color: var(--accent); font-weight: 600; }
 	.bulk-grant { display: flex; align-items: center; gap: var(--sp-1); }
 	.bulk-clear { margin-left: auto; }
+	.bulk-failures {
+		margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3);
+		background: rgba(255, 82, 82, 0.05); border: 1px solid rgba(255, 82, 82, 0.2);
+		border-radius: var(--radius-sm); font-size: 10px; color: var(--state-error);
+	}
+	.bulk-failures summary { cursor: pointer; font-weight: 600; letter-spacing: 0.06em; }
+	.failure-list { margin: var(--sp-2) 0 0 0; padding-left: var(--sp-4); display: flex; flex-direction: column; gap: 2px; }
+	.failure-list li { color: var(--text-secondary); }
+	.failure-org { color: var(--text-tertiary); }
 
 	/* User list */
 	.user-list {

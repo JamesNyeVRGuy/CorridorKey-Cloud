@@ -225,6 +225,14 @@ class GrantCreditsRequest(BaseModel):
     hours: float
 
 
+class BulkGrantCreditsRequest(BaseModel):
+    org_ids: list[str]
+    hours: float
+
+
+_MAX_BULK_GRANT_ORGS = 500
+
+
 @router.post("/credits/grant")
 def grant_credits(req: GrantCreditsRequest, request: Request):
     """Grant or revoke GPU credit hours for an org. Platform admin only.
@@ -251,6 +259,78 @@ def grant_credits(req: GrantCreditsRequest, request: Request):
     from ..gpu_credits import get_org_credits
 
     return get_org_credits(req.org_id).to_dict()
+
+
+@router.post("/credits/grant/bulk")
+def grant_credits_bulk(req: BulkGrantCreditsRequest, request: Request):
+    """Grant or revoke GPU credit hours for many orgs in one request.
+
+    Replaces the client-side for-loop pattern that fired N individual
+    /credits/grant calls, swallowed failures into a plain counter, and
+    left no way to tell which orgs failed or why. Processes every
+    org_id in one request and returns a per-id result list; callers
+    can surface individual errors to the operator and retry just the
+    failures.
+    """
+    from ..gpu_credits import add_contributed, get_org_credits
+
+    if req.hours == 0:
+        raise HTTPException(status_code=400, detail="Hours must be non-zero")
+    if not req.org_ids:
+        raise HTTPException(status_code=400, detail="At least one org_id required")
+    if len(req.org_ids) > _MAX_BULK_GRANT_ORGS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bulk grant accepts at most {_MAX_BULK_GRANT_ORGS} orgs per request",
+        )
+
+    org_store = get_org_store()
+    seconds = req.hours * 3600
+    results: list[dict] = []
+    granted = 0
+    failed = 0
+
+    # De-duplicate org_ids to avoid double-applying and to make the result
+    # list easier to reason about when a caller accidentally sends repeats.
+    seen: set[str] = set()
+
+    for org_id in req.org_ids:
+        if org_id in seen:
+            continue
+        seen.add(org_id)
+
+        org = org_store.get_org(org_id)
+        if not org:
+            results.append({"org_id": org_id, "ok": False, "error": "Org not found"})
+            failed += 1
+            continue
+
+        try:
+            add_contributed(org_id, seconds)
+            credits = get_org_credits(org_id).to_dict()
+            results.append({"org_id": org_id, "ok": True, "balance": credits})
+            granted += 1
+        except Exception as e:
+            logger.exception("Bulk grant failed for org %s", org_id)
+            results.append({"org_id": org_id, "ok": False, "error": str(e) or "Internal error"})
+            failed += 1
+
+    action = "credits.granted" if req.hours > 0 else "credits.revoked"
+    audit_from_request(
+        action,
+        request,
+        target_type="orgs",
+        target_id=",".join(sorted(seen))[:200],
+        details={
+            "hours": req.hours,
+            "seconds": seconds,
+            "granted": granted,
+            "failed": failed,
+            "org_count": len(seen),
+        },
+    )
+
+    return {"results": results, "granted": granted, "failed": failed, "hours": req.hours}
 
 
 @router.get("/credits")
