@@ -447,11 +447,7 @@ class UserStore:
                     cur.close()
                     return int(row[0] or 0)
 
-        return sum(
-            1
-            for v in self._blob_load().values()
-            if self._matches(UserRecord(**v), tier_filter, q)
-        )
+        return sum(1 for v in self._blob_load().values() if self._matches(UserRecord(**v), tier_filter, q))
 
     @staticmethod
     def _build_where(tier_filter: str | None, q: str | None) -> tuple[str, tuple]:
