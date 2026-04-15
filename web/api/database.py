@@ -187,6 +187,15 @@ class PostgresBackend(StorageBackend):
                                 node_id TEXT,
                                 revoked BOOLEAN NOT NULL DEFAULT FALSE);
                             CREATE INDEX IF NOT EXISTS idx_ck_node_tokens_org ON ck.node_tokens (org_id);
+                            CREATE TABLE IF NOT EXISTS ck.verification_jobs (
+                                original_job_id TEXT PRIMARY KEY,
+                                verification_job_id TEXT,
+                                status TEXT NOT NULL DEFAULT 'pending',
+                                org_id TEXT,
+                                details JSONB NOT NULL DEFAULT '{}'::jsonb,
+                                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                                completed_at TIMESTAMPTZ);
+                            CREATE INDEX IF NOT EXISTS idx_ck_verification_jobs_status ON ck.verification_jobs (status);
                         """)
                         logger.info("Created ck schema and tables")
                     except Exception as schema_err:
