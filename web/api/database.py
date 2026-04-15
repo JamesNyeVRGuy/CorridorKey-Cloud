@@ -212,6 +212,16 @@ class PostgresBackend(StorageBackend):
                                 joined_at DOUBLE PRECISION NOT NULL DEFAULT 0,
                                 PRIMARY KEY (org_id, user_id));
                             CREATE INDEX IF NOT EXISTS idx_ck_org_members_user ON ck.org_members (user_id);
+                            CREATE TABLE IF NOT EXISTS ck.node_reputations (
+                                node_id TEXT PRIMARY KEY,
+                                completed_jobs BIGINT NOT NULL DEFAULT 0,
+                                failed_jobs BIGINT NOT NULL DEFAULT 0,
+                                total_frames BIGINT NOT NULL DEFAULT 0,
+                                total_processing_seconds DOUBLE PRECISION NOT NULL DEFAULT 0,
+                                missed_heartbeats BIGINT NOT NULL DEFAULT 0,
+                                total_heartbeats BIGINT NOT NULL DEFAULT 0,
+                                security_warnings INTEGER NOT NULL DEFAULT 0,
+                                last_updated DOUBLE PRECISION NOT NULL DEFAULT 0);
                         """)
                         logger.info("Created ck schema and tables")
                     except Exception as schema_err:
