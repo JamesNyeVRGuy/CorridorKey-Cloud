@@ -357,6 +357,48 @@ class TestCopyViaCas:
         cas = _cas_files(cas_dir)
         assert cas[0].endswith(".mov")
 
+    def test_concurrent_writers_single_inode(self, tmp_path):
+        """Two concurrent _copy_via_cas calls for identical bytes share one inode."""
+        content = b"concurrent-upload-bytes"
+        v1 = _make_video(tmp_path, "up1.mp4", content)
+        v2 = _make_video(tmp_path, "up2.mp4", content)
+        cas_dir = str(tmp_path / ".cas")
+        t1 = str(tmp_path / "d1" / "up1.mp4")
+        t2 = str(tmp_path / "d2" / "up2.mp4")
+        os.makedirs(os.path.dirname(t1))
+        os.makedirs(os.path.dirname(t2))
+
+        # Simulate the race: Writer A promotes via os.link(tmp, cas_path).
+        # Before Writer B checks os.path.exists, cas_path already exists.
+        # But we want to test the else-branch race: both see exists=False,
+        # then both try os.link(tmp, cas_path).  We force this by making
+        # os.path.exists return False for cas_path on both calls, so both
+        # writers enter the else-branch.
+        real_exists = os.path.exists
+        call_count = {"n": 0}
+        expected_hash = _sha256(content)
+
+        def fake_exists(p):
+            # Let the first two checks of cas_path see False (both writers enter else)
+            if expected_hash in str(p) and call_count["n"] < 2:
+                call_count["n"] += 1
+                return False
+            return real_exists(p)
+
+        with mock.patch("backend.project.os.path.exists", side_effect=fake_exists):
+            _copy_via_cas(v1, t1, cas_dir)
+            _copy_via_cas(v2, t2, cas_dir)
+
+        # Only one CAS entry
+        cas = _cas_files(cas_dir)
+        assert len(cas) == 1, f"Expected 1 CAS entry, got {cas}"
+
+        # Both targets point at the same inode as the CAS entry
+        cas_path = os.path.join(cas_dir, cas[0])
+        assert os.stat(t1).st_ino == os.stat(cas_path).st_ino
+        assert os.stat(t2).st_ino == os.stat(cas_path).st_ino
+        assert _nlink(cas_path) == 3  # CAS + t1 + t2
+
 
 # ===========================================================================
 # create_project

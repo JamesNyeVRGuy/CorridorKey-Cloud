@@ -148,6 +148,11 @@ def _sweep_cas_dir(cas_dir: str, org_id: str) -> tuple[int, int]:
     ``.{name}.orphan`` file; subsequent sweeps reap entries whose tombstone
     is older than 1 hour.
 
+    Note: reap latency is at least ~2 sweep cycles one to create the
+    tombstone, one to check it after TTL.  With the default
+    ``check_interval=3600`` and a 1-hour TTL, expect ~2 hours minimum
+    between "last hardlink removed" and "bytes reclaimed"
+
     Returns:
         (bytes_freed, files_removed)
     """
@@ -155,7 +160,7 @@ def _sweep_cas_dir(cas_dir: str, org_id: str) -> tuple[int, int]:
     removed = 0
 
     for fname in os.listdir(cas_dir):
-        if fname.startswith("."):
+        if fname.startswith(".") or fname.endswith(".probe"):
             continue
         path = os.path.join(cas_dir, fname)
         tombstone = os.path.join(cas_dir, f".{fname}.orphan")

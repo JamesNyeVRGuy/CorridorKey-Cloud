@@ -32,9 +32,26 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-_VIDEO_EXTS = frozenset({".mp4", ".mov", ".avi", ".mkv", ".mxf", ".webm", ".m4v"})
+_VIDEO_EXTS = frozenset(
+    {
+        ".mp4",
+        ".mov",
+        ".avi",
+        ".mkv",
+        ".mxf",
+        ".webm",
+        ".m4v",
+        ".r3d",
+        ".braw",
+        ".ari",
+        ".ts",
+        ".m2ts",
+    }
+)
 _IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".exr", ".tif", ".tiff", ".bmp", ".dpx"})
-VIDEO_FILE_FILTER = "Video Files (*.mp4 *.mov *.avi *.mkv *.mxf *.webm *.m4v);;All Files (*)"
+VIDEO_FILE_FILTER = (
+    "Video Files (*.mp4 *.mov *.avi *.mkv *.mxf *.webm *.m4v *.r3d *.braw *.ari *.ts *.m2ts);;All Files (*)"
+)
 
 _app_dir: str | None = None
 
@@ -226,42 +243,47 @@ def _copy_via_cas(video_path: str, target: str, cas_dir: str) -> None:
     """Copy a video into the CAS store and hardlink it to *target*.
 
     If the file's SHA-256 already exists in *cas_dir*, the existing entry is
-    reused (dedup).  Falls back to a plain ``shutil.copy2`` when hardlinks
-    are not supported.
+    reused (dedup).  Falls back to a plain
+    ``shutil.copy2`` when hardlinks are not supported.
     """
     os.makedirs(cas_dir, exist_ok=True)
     raw_ext = os.path.splitext(os.path.basename(video_path))[1].lower()
     ext = raw_ext if raw_ext in _VIDEO_EXTS else ""
 
-    cas_tmp = os.path.join(cas_dir, f".{uuid.uuid4().hex}{ext}.tmp")
+    hasher = hashlib.sha256()
+    with open(video_path, "rb") as src:
+        while chunk := src.read(8 * 1024 * 1024):
+            hasher.update(chunk)
+    file_hash = hasher.hexdigest()
+    cas_path = os.path.join(cas_dir, f"{file_hash}{ext}")
+    cas_tmp = ""
     try:
-        hasher = hashlib.sha256()
-        with open(video_path, "rb") as src, open(cas_tmp, "wb") as dst:
-            while chunk := src.read(8 * 1024 * 1024):
-                hasher.update(chunk)
-                dst.write(chunk)
-        file_hash = hasher.hexdigest()
-        cas_path = os.path.join(cas_dir, f"{file_hash}{ext}")
+        try:
+            os.link(cas_path, target)
+            logger.info(f"Hardlinked source video from CAS: {cas_path} -> {target}")
+            return
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            logger.warning(f"Hardlink failed ({e}), falling back to copy: {video_path} -> {target}")
+            shutil.copy2(video_path, target)
+            return
 
-        if os.path.exists(cas_path):
-            os.remove(cas_tmp)
-            cas_tmp = ""
-            try:
-                os.link(cas_path, target)
-                logger.info(f"Hardlinked source video from CAS: {cas_path} -> {target}")
-            except OSError as e:
-                logger.warning(f"Hardlink failed ({e}), falling back to copy: {video_path} -> {target}")
+        cas_tmp = os.path.join(cas_dir, f".{uuid.uuid4().hex}{ext}.tmp")
+        shutil.copy2(video_path, cas_tmp)
+        try:
+            os.link(cas_tmp, cas_path)
+        except FileExistsError:
+            pass  # another writer promoted first; content identical by hash
+        os.remove(cas_tmp)
+        cas_tmp = ""
+        try:
+            os.link(cas_path, target)
+            logger.info(f"Copied to CAS and hardlinked: {video_path} -> {target}")
+        except OSError as e:
+            logger.warning(f"CAS hardlink failed ({e}), falling back to copy: {video_path} -> {target}")
+            if not os.path.exists(target):
                 shutil.copy2(video_path, target)
-        else:
-            os.replace(cas_tmp, cas_path)
-            cas_tmp = ""
-            try:
-                os.link(cas_path, target)
-                logger.info(f"Copied to CAS and hardlinked: {video_path} -> {target}")
-            except OSError as e:
-                logger.warning(f"CAS hardlink failed ({e}), falling back to copy: {video_path} -> {target}")
-                if not os.path.exists(target):
-                    shutil.copy2(video_path, target)
     except Exception:
         if not os.path.exists(target):
             shutil.copy2(video_path, target)
