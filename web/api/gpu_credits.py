@@ -6,12 +6,17 @@ resource sharing.
 
 Credits are stored in ck.gpu_credits (org_id keyed). When Postgres is
 not available, falls back to the JSON storage backend.
+
+Monthly recurring grants (CRKY-185) are gated by a separate ledger
+(ck.credit_grants) so the sweep is idempotent within a calendar month
+and multi-worker safe via ON CONFLICT DO NOTHING.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,6 +25,11 @@ logger = logging.getLogger(__name__)
 # Starter credits granted to new orgs on user approval (GPU-seconds).
 # Default 3600 = 1 hour. Set to 0 to disable.
 STARTER_CREDITS = float(os.environ.get("CK_STARTER_CREDITS", "3600").strip())
+
+# Monthly recurring credits granted to every non-pending org once per
+# calendar month. Default 3600 = 1 hour per month. Set to 0 to disable
+# the recurring grant daemon entirely. Enabled by default (CRKY-185).
+MONTHLY_CREDITS = float(os.environ.get("CK_MONTHLY_CREDITS", "3600").strip())
 
 
 @dataclass
@@ -174,3 +184,129 @@ def get_all_credits() -> list[OrgCredits]:
         )
         for oid, data in credits.items()
     ]
+
+
+# --- Monthly recurring grants (CRKY-185) ---
+
+
+def _current_period() -> str:
+    """Current grant period identifier. One period = one UTC calendar month."""
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+def grant_monthly_credits(org_id: str, period: str, seconds: float) -> bool:
+    """Grant monthly credits for an org if not already granted this period.
+
+    The ledger row in ``ck.credit_grants`` is the source of truth. Insert
+    wins atomically: if the row already exists, ON CONFLICT DO NOTHING
+    short-circuits and we do NOT bump the balance. Multiple workers
+    racing the same (org_id, period) is safe — exactly one INSERT wins
+    and only that worker calls add_contributed.
+
+    Returns:
+        True if a grant was applied (insert won and balance bumped),
+        False if skipped because this org already has a ledger row for
+        the period, or the inputs are zero/empty.
+    """
+    if seconds <= 0 or not org_id or not period:
+        return False
+
+    from .database import get_pg_conn
+
+    with get_pg_conn() as conn:
+        if conn is not None:
+            cur = conn.cursor()
+            cur.execute(
+                """INSERT INTO ck.credit_grants (org_id, grant_type, period, seconds)
+                   VALUES (%s, 'monthly', %s, %s)
+                   ON CONFLICT (org_id, grant_type, period) DO NOTHING
+                   RETURNING org_id""",
+                (org_id, period, seconds),
+            )
+            won = cur.fetchone() is not None
+            cur.close()
+            if won:
+                add_contributed(org_id, seconds)
+            return won
+
+    # Dev/test fallback: the JSON path is single-process anyway, so a
+    # naive in-memory dedupe key is sufficient.
+    from .database import get_storage
+
+    storage = get_storage()
+    ledger = storage.get_setting("credit_grants", {})
+    key = f"{org_id}:monthly:{period}"
+    if key in ledger:
+        return False
+    ledger[key] = {
+        "org_id": org_id,
+        "grant_type": "monthly",
+        "period": period,
+        "seconds": seconds,
+        "granted_at": time.time(),
+    }
+    storage.set_setting("credit_grants", ledger)
+    add_contributed(org_id, seconds)
+    return True
+
+
+def run_monthly_grant_cycle(seconds: float | None = None, period: str | None = None) -> dict:
+    """Run one monthly grant sweep over every org.
+
+    Idempotent within a calendar month via the credit_grants ledger.
+    Returns a summary dict suitable for logging and audit.
+
+    Pending users' personal orgs are skipped, matching the existing
+    approve_user gate that already withholds starter credits from
+    unapproved accounts. Non-personal orgs are always granted.
+
+    Args:
+        seconds: per-org grant amount. Defaults to ``MONTHLY_CREDITS``.
+                 Passing 0 disables the cycle.
+        period: override the period string. Defaults to the current UTC
+                month (``YYYY-MM``).
+    """
+    amount = MONTHLY_CREDITS if seconds is None else float(seconds)
+    if amount <= 0:
+        return {
+            "granted": 0,
+            "skipped": 0,
+            "total_seconds": 0.0,
+            "period": period or _current_period(),
+            "disabled": True,
+        }
+
+    from .orgs import get_org_store
+    from .users import get_user_store
+
+    period = period or _current_period()
+    org_store = get_org_store()
+    user_store = get_user_store()
+
+    granted = 0
+    skipped = 0
+
+    for org in org_store.list_orgs():
+        # Personal orgs for pending users don't get starter credits on
+        # signup, so they shouldn't get recurring ones either. Match
+        # the approve_user flow at routes/admin.py.
+        if org.personal:
+            owner = user_store.get_user(org.owner_id)
+            if owner is None or owner.tier == "pending" or owner.tier == "rejected":
+                skipped += 1
+                continue
+
+        if grant_monthly_credits(org.org_id, period, amount):
+            granted += 1
+        else:
+            skipped += 1
+
+    return {
+        "granted": granted,
+        "skipped": skipped,
+        "total_seconds": granted * amount,
+        "period": period,
+        "disabled": False,
+    }

@@ -220,6 +220,11 @@ async def lifespan(app: FastAPI):
 
     start_cleanup(clips_dir, stop_event)
 
+    # Start monthly credit grant daemon (CRKY-185)
+    from .credit_scheduler import start_grant_scheduler
+
+    start_grant_scheduler(stop_event)
+
     app.state.clips_dir = clips_dir
     app.state.worker_thread = worker_thread
     app.state.reaper_thread = reaper_thread

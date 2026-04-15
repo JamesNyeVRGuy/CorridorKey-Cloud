@@ -248,6 +248,15 @@ class PostgresBackend(StorageBackend):
                                 id TEXT PRIMARY KEY,
                                 policy JSONB NOT NULL DEFAULT '{}'::jsonb,
                                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+                            CREATE TABLE IF NOT EXISTS ck.credit_grants (
+                                org_id TEXT NOT NULL,
+                                grant_type TEXT NOT NULL,
+                                period TEXT NOT NULL,
+                                granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                                seconds DOUBLE PRECISION NOT NULL DEFAULT 0,
+                                PRIMARY KEY (org_id, grant_type, period));
+                            CREATE INDEX IF NOT EXISTS idx_ck_credit_grants_period
+                                ON ck.credit_grants (grant_type, period);
                         """)
                         logger.info("Created ck schema and tables")
                     except Exception as schema_err:
