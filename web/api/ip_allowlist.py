@@ -21,28 +21,74 @@ logger = logging.getLogger(__name__)
 
 
 def _load_allowlists() -> dict[str, list[str]]:
-    """Load allowlists from storage. Returns {org_id: [cidr, ...]}."""
+    """Load all allowlists as {org_id: [cidr, ...]}.
+
+    Prefers the ck.ip_allowlist table; falls back to the legacy JSON
+    blob when Postgres is unavailable.
+    """
+    from .database import get_pg_conn
+
+    with get_pg_conn() as conn:
+        if conn is not None:
+            cur = conn.cursor()
+            cur.execute("SELECT org_id, cidr FROM ck.ip_allowlist")
+            rows = cur.fetchall()
+            cur.close()
+            out: dict[str, list[str]] = {}
+            for org_id, cidr in rows:
+                out.setdefault(org_id, []).append(cidr)
+            return out
+
     from .database import get_storage
 
     return get_storage().get_setting("ip_allowlists", {})
 
 
 def save_allowlist(org_id: str, cidrs: list[str]) -> None:
-    """Save allowlist for an org. Empty list = no restriction."""
-    from .database import get_storage
+    """Save the allowlist for an org (bulk replace). Empty list = no restriction.
 
-    allowlists = _load_allowlists()
+    Postgres path uses a DELETE + INSERT inside a single CTE so the
+    replacement is atomic per org and cannot interfere with a parallel
+    write for a different org. The JSON fallback is still a
+    blob-rewrite and remains vulnerable to cross-org interference —
+    dev/test only.
+    """
+    from .database import get_pg_conn
+
     if cidrs:
-        # Validate all CIDRs
         for cidr in cidrs:
             try:
                 ipaddress.ip_network(cidr, strict=False)
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=f"Invalid CIDR: {cidr} ({e})") from None
+
+    with get_pg_conn() as conn:
+        if conn is not None:
+            cur = conn.cursor()
+            if cidrs:
+                cur.execute(
+                    """WITH deleted AS (
+                           DELETE FROM ck.ip_allowlist WHERE org_id = %s
+                       )
+                       INSERT INTO ck.ip_allowlist (org_id, cidr)
+                       SELECT %s, UNNEST(%s::text[])
+                       ON CONFLICT DO NOTHING""",
+                    (org_id, org_id, list(cidrs)),
+                )
+            else:
+                cur.execute("DELETE FROM ck.ip_allowlist WHERE org_id = %s", (org_id,))
+            cur.close()
+            return
+
+    from .database import get_storage
+
+    storage = get_storage()
+    allowlists = storage.get_setting("ip_allowlists", {})
+    if cidrs:
         allowlists[org_id] = cidrs
     else:
         allowlists.pop(org_id, None)
-    get_storage().set_setting("ip_allowlists", allowlists)
+    storage.set_setting("ip_allowlists", allowlists)
 
 
 def check_ip_allowlist(request: Request) -> None:

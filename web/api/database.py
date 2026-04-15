@@ -232,6 +232,10 @@ class PostgresBackend(StorageBackend):
                                 created_by TEXT NOT NULL DEFAULT '',
                                 created_at DOUBLE PRECISION NOT NULL DEFAULT 0);
                             CREATE INDEX IF NOT EXISTS idx_ck_webhooks_org ON ck.webhooks (org_id);
+                            CREATE TABLE IF NOT EXISTS ck.ip_allowlist (
+                                org_id TEXT NOT NULL,
+                                cidr TEXT NOT NULL,
+                                PRIMARY KEY (org_id, cidr));
                         """)
                         logger.info("Created ck schema and tables")
                     except Exception as schema_err:
