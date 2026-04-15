@@ -39,7 +39,14 @@ linear_pixel_arrays = arrays(
         st.integers(min_value=4, max_value=16),
         st.just(3),
     ),
-    elements=st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False),
+    elements=st.floats(
+        min_value=0.0,
+        max_value=1.0,
+        allow_nan=False,
+        allow_infinity=False,
+        # Match float width to width in NumPy array
+        width=32,
+    ),
 )
 
 # uint8 pixel arrays for standard image data (PNG/JPG)

@@ -151,8 +151,19 @@ def _enumerate_nvidia() -> list[GPUInfo] | None:
                     )
                 )
         return gpus
+    # Expected failures, continue to next fallback
     except (FileNotFoundError, TimeoutExpired):
-        return None
+        pass
+    # Catch known bad nvidia-smi output
+    except ValueError as e:
+        if "[N/A]" in str(e):
+            logger.debug("bad nvidia-smi output, continuing to fallbacks")
+        else:
+            logger.debug("Unexpected ValueError trying to enumerate GPUs", exc_info=True)
+    # Catch all exceptions and log but continue to fallbacks
+    except Exception:
+        logger.debug("Unexpected failure trying to enumerate GPUs", exc_info=True)
+    return None
 
 
 def _enumerate_amd_windows() -> list[GPUInfo] | None:
@@ -239,8 +250,12 @@ def _enumerate_amd() -> list[GPUInfo] | None:
                 except Exception:
                     pass
                 return gpus
+    # Expected failures, continue to next fallback
     except (FileNotFoundError, TimeoutExpired, json.JSONDecodeError):
         pass
+    # Catch all exceptions and log but continue to fallbacks
+    except Exception:
+        logger.debug("Unexpected failure trying to enumerate GPUs", exc_info=True)
 
     # Fallback: rocm-smi (legacy, deprecated but still ships)
     try:
@@ -268,8 +283,12 @@ def _enumerate_amd() -> list[GPUInfo] | None:
                     )
             if gpus:
                 return gpus
+    # Expected failures, continue to next fallback
     except (FileNotFoundError, TimeoutExpired):
         pass
+    # Catch all exceptions and log but continue to fallbacks
+    except Exception:
+        logger.debug("Unexpected failure trying to enumerate GPUs", exc_info=True)
 
     # Fallback: pyrsmi Python package (pip install pyrsmi)
     try:
@@ -300,6 +319,34 @@ def _enumerate_amd() -> list[GPUInfo] | None:
     return _enumerate_amd_windows()
 
 
+def _enumerate_torch() -> list[GPUInfo] | None:
+    """Enumerate GPUs via torch. Returns None if unavailable."""
+    try:
+        if torch.cuda.is_available():
+            gpus = []
+            for i in range(torch.cuda.device_count()):
+                props = torch.cuda.get_device_properties(i)
+                total = props.total_memory / (1024**3)
+                gpus.append(
+                    GPUInfo(
+                        index=i,
+                        name=props.name,
+                        vram_total_gb=total,
+                        vram_free_gb=total,  # can't query free without setting device
+                    )
+                )
+            if gpus:
+                return gpus
+    except RuntimeError:
+        # AMD torch ships caffe2_nvrtc.dll (NVIDIA) which crashes on AMD-only machines.
+        # _lazy_init() fails with LoadLibrary error — fall through to empty list.
+        logger.debug("torch.cuda init failed (caffe2_nvrtc?), falling through", exc_info=True)
+    # Catch all exceptions and log but continue to try all enumeration fallbacks (continue to default return)
+    except Exception:
+        logger.debug("Unexpected failure trying to enumerate GPUs", exc_info=True)
+    return None
+
+
 def enumerate_gpus() -> list[GPUInfo]:
     """List all available GPUs with VRAM info.
 
@@ -318,26 +365,11 @@ def enumerate_gpus() -> list[GPUInfo]:
         return gpus
 
     # Fallback to torch (works for both NVIDIA and ROCm via HIP)
-    try:
-        if torch.cuda.is_available():
-            fallback: list[GPUInfo] = []
-            for i in range(torch.cuda.device_count()):
-                props = torch.cuda.get_device_properties(i)
-                total = props.total_memory / (1024**3)
-                fallback.append(
-                    GPUInfo(
-                        index=i,
-                        name=props.name,
-                        vram_total_gb=total,
-                        vram_free_gb=total,  # can't query free without setting device
-                    )
-                )
-            return fallback
-    except RuntimeError:
-        # AMD torch ships caffe2_nvrtc.dll (NVIDIA) which crashes on AMD-only machines.
-        # _lazy_init() fails with LoadLibrary error — fall through to empty list.
-        logger.debug("torch.cuda init failed (caffe2_nvrtc?), falling through", exc_info=True)
+    gpus = _enumerate_torch()
+    if gpus is not None:
+        return gpus
 
+    # return empty list as a default
     return []
 
 
@@ -408,8 +440,18 @@ def check_gpu_available(gpu_index: int = 0, min_free_gb: float = 0.0) -> tuple[b
                 if min_free_gb > 0 and free_gb < min_free_gb:
                     return False, f"GPU {gpu_index} low VRAM ({free_gb:.1f}GB free, need {min_free_gb:.1f}GB)"
                 return True, "ok"
+    # Expected failures, continue to next fallback
     except (FileNotFoundError, TimeoutExpired):
         pass
+    # Catch known bad nvidia-smi output
+    except ValueError as e:
+        if "[N/A]" in str(e):
+            logger.debug("bad nvidia-smi output, continuing to fallbacks")
+        else:
+            logger.debug("Unexpected ValueError trying to check GPU usage", exc_info=True)
+    # Catch all exceptions and log but continue to fallbacks
+    except Exception:
+        logger.debug("Unexpected failure trying to check GPU usage", exc_info=True)
 
     # Try AMD
     try:
@@ -429,6 +471,25 @@ def check_gpu_available(gpu_index: int = 0, min_free_gb: float = 0.0) -> tuple[b
                 return True, "ok"
     except (FileNotFoundError, TimeoutExpired, Exception):
         pass
+
+    # Try PyTorch
+    if torch.cuda.is_available():
+        try:
+            # Set the device to query
+            device = torch.device(f"cuda:{gpu_index}")
+
+            # mem_get_info returns (free_bytes, total_bytes)
+            free_bytes, _ = torch.cuda.mem_get_info(device)
+            free_gb = free_bytes / (1024**3)
+
+            # No utility check so fallback relies on just vram usage
+            if min_free_gb > 0 and free_gb < min_free_gb:
+                return False, f"GPU {gpu_index} low VRAM (PyTorch: {free_gb:.1f}GB free)"
+
+            return True, "ok"
+        # Catch all so we return default
+        except Exception:
+            pass
 
     return True, "gpu monitoring unavailable"
 

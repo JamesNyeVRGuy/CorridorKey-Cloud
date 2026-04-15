@@ -5,22 +5,39 @@
 #
 # Security: runs as non-root (uid 1000), agent refuses to run as root.
 #
-# Build (NVIDIA): docker build -f web/Dockerfile.node -t corridorkey-node:nvidia .
-# Build (AMD):    docker build -f web/Dockerfile.node --build-arg GPU_VENDOR=amd -t corridorkey-node:amd .
-# Run (NVIDIA):   docker run --gpus all -e CK_MAIN_URL=http://host:3000 corridorkey-node:nvidia
-# Run (AMD):      docker run --device /dev/kfd --device /dev/dri -e CK_MAIN_URL=http://host:3000 corridorkey-node:amd
+# Build (NVIDIA):       docker build -f web/Dockerfile.node -t corridorkey-node:nvidia .
+# Build (AMD):          docker build -f web/Dockerfile.node --build-arg GPU_VENDOR=amd -t corridorkey-node:amd .
+# Build (NVIDIA NGC):   docker build -f web/Dockerfile.node --build-arg GPU_VENDOR=nvidia-ngc -t corridorkey-node:nvidia-ngc .
+# Run (NVIDIA):         docker run --gpus all -e CK_MAIN_URL=http://host:3000 corridorkey-node:nvidia
+# Run (AMD):            docker run --device /dev/kfd --device /dev/dri -e CK_MAIN_URL=http://host:3000 corridorkey-node:amd
+# Run (NVIDIA NGC):     docker run --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 -e CK_MAIN_URL=http://host:3000 corridorkey-node:nvidia-ngc
 
 ARG GPU_VENDOR=nvidia
+# Only consumed by the nvidia-ngc stage; ignored for other vendors.
+ARG NVIDIA_PYTORCH_CONTAINER_VERSION=25.09
 
-FROM ghcr.io/astral-sh/uv:0.7-python3.11-bookworm-slim
+# NVIDIA / AMD
+FROM ghcr.io/astral-sh/uv:0.7-python3.11-bookworm-slim AS base-nvidia
+FROM ghcr.io/astral-sh/uv:0.7-python3.11-bookworm-slim AS base-amd
+# NVIDIA NGC Container
+FROM nvcr.io/nvidia/pytorch:${NVIDIA_PYTORCH_CONTAINER_VERSION}-py3 AS base-nvidia-ngc
+# Inject uv to manage the dependency graph in this runtime
+COPY --from=ghcr.io/astral-sh/uv:0.7 /uv /usr/local/bin/uv
 
+FROM base-${GPU_VENDOR} AS runtime
 # Re-declare after FROM (ARGs are reset by FROM)
 ARG GPU_VENDOR
 
 WORKDIR /app
 
 # Create non-root user
-RUN useradd --create-home --uid 1000 nodeuser
+RUN if [ "$GPU_VENDOR" = "nvidia-ngc" ]; then \
+        # Let system pick UID to avoid collision with user created in base NGC container
+        useradd --create-home nodeuser; \
+    else \
+        # Use UID 1000 normally
+        useradd --create-home --uid 1000 nodeuser; \
+    fi
 
 # Runtime deps for OpenCV and video I/O
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -41,6 +58,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         uv sync --frozen --no-dev --no-install-project && \
         uv pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/rocm6.3 && \
         uv pip install pyrsmi; \
+    elif [ "$GPU_VENDOR" = "nvidia-ngc" ]; then \
+        # Creates venv with system package access
+        # Installs project dependencies and reconciles environment with uv dependency graph ignoring torch and torchvision
+        uv venv --python "$(python3 -c 'import sys; print(sys.executable)')" --system-site-packages .venv && \
+        uv sync --no-dev --no-install-project \
+            --no-install-package torch --no-install-package torchvision; \
     else \
         uv sync --frozen --no-dev --extra cuda --no-install-project; \
     fi
@@ -61,6 +84,10 @@ COPY --chown=nodeuser:nodeuser README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     if [ "$GPU_VENDOR" = "amd" ]; then \
         uv sync --frozen --no-dev; \
+    elif [ "$GPU_VENDOR" = "nvidia-ngc" ]; then \
+        # Should match dependency installation sync without --no-install-package
+        uv sync --no-dev \
+            --no-install-package torch --no-install-package torchvision; \
     else \
         uv sync --frozen --no-dev --extra cuda; \
     fi
@@ -78,8 +105,10 @@ RUN mkdir -p CorridorKeyModule/checkpoints \
     VideoMaMaInferenceModule/checkpoints \
     /tmp/ck-work \
     /app/.cache/corridorkey \
-    /app/.cache/matplotlib \
-    .venv/lib/python3.11/site-packages/corridorkey-1.0.0.dist-info
+    /app/.cache/matplotlib && \
+    # No hardcoded python version
+    find .venv/lib -maxdepth 4 -name "corridorkey*.dist-info" \
+        -exec chown -R nodeuser:nodeuser {} +
 
 # Run as non-root
 USER nodeuser

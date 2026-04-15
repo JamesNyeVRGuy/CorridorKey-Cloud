@@ -9,6 +9,9 @@ authors = [{ name = "Corridor Digital" }]
 
 dependencies = [
     # Core inference
+    #   Standalone CUDA:       uv sync --extra cuda
+    #   ROCm / AMD:            uv sync --extra rocm
+    #   NVIDIA container:      uv sync --no-install-package torch --no-install-package torchvision
     "torch==2.8.0",
     "torchvision==0.23.0",
     "timm==1.0.24",
@@ -19,7 +22,7 @@ dependencies = [
     # Triton fix for Windows
     # There might still be issues though https://github.com/triton-lang/triton-windows?tab=readme-ov-file#windows-file-path-length-limit-260-causes-compilation-failure
     "triton-windows==3.4.0.post21 ; sys_platform == 'win32'",
-    # GVM alpha hint generator.
+    # GVM alpha hint generator
     # Floors matter: the node binary is built with `pip install -e .` (not uv
     # sync), so pip's resolver — not uv.lock — decides the installed versions.
     # Transformers 5.x calls require_version("peft>=0.17.0") at runtime, so
