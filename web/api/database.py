@@ -196,6 +196,22 @@ class PostgresBackend(StorageBackend):
                                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                                 completed_at TIMESTAMPTZ);
                             CREATE INDEX IF NOT EXISTS idx_ck_verification_jobs_status ON ck.verification_jobs (status);
+                            CREATE TABLE IF NOT EXISTS ck.orgs (
+                                org_id TEXT PRIMARY KEY,
+                                name TEXT NOT NULL DEFAULT '',
+                                owner_id TEXT NOT NULL,
+                                personal BOOLEAN NOT NULL DEFAULT FALSE,
+                                created_at DOUBLE PRECISION NOT NULL DEFAULT 0);
+                            CREATE INDEX IF NOT EXISTS idx_ck_orgs_owner ON ck.orgs (owner_id);
+                            CREATE UNIQUE INDEX IF NOT EXISTS orgs_one_personal_per_owner
+                                ON ck.orgs (owner_id) WHERE personal = TRUE;
+                            CREATE TABLE IF NOT EXISTS ck.org_members (
+                                org_id TEXT NOT NULL REFERENCES ck.orgs(org_id) ON DELETE CASCADE,
+                                user_id TEXT NOT NULL,
+                                role TEXT NOT NULL DEFAULT 'member',
+                                joined_at DOUBLE PRECISION NOT NULL DEFAULT 0,
+                                PRIMARY KEY (org_id, user_id));
+                            CREATE INDEX IF NOT EXISTS idx_ck_org_members_user ON ck.org_members (user_id);
                         """)
                         logger.info("Created ck schema and tables")
                     except Exception as schema_err:
