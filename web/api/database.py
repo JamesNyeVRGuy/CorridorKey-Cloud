@@ -177,6 +177,16 @@ class PostgresBackend(StorageBackend):
                                 approved_by TEXT NOT NULL DEFAULT '');
                             CREATE INDEX IF NOT EXISTS idx_ck_users_email ON ck.users (email);
                             CREATE INDEX IF NOT EXISTS idx_ck_users_tier ON ck.users (tier);
+                            CREATE TABLE IF NOT EXISTS ck.node_tokens (
+                                token TEXT PRIMARY KEY,
+                                org_id TEXT NOT NULL,
+                                label TEXT NOT NULL DEFAULT '',
+                                created_by TEXT NOT NULL DEFAULT '',
+                                created_at DOUBLE PRECISION NOT NULL DEFAULT 0,
+                                last_used_at DOUBLE PRECISION NOT NULL DEFAULT 0,
+                                node_id TEXT,
+                                revoked BOOLEAN NOT NULL DEFAULT FALSE);
+                            CREATE INDEX IF NOT EXISTS idx_ck_node_tokens_org ON ck.node_tokens (org_id);
                         """)
                         logger.info("Created ck schema and tables")
                     except Exception as schema_err:
