@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
@@ -73,6 +74,7 @@ class GPUJob:
     # Progress tracking
     current_frame: int = 0
     total_frames: int = 0
+    last_progress_at: float = 0  # timestamp of last progress update (stall detection)
 
     def request_cancel(self) -> None:
         """Signal that this job should stop at the next frame boundary."""
@@ -108,6 +110,7 @@ class GPUJob:
             "shard_total": self.shard_total,
             "current_frame": self.current_frame,
             "total_frames": self.total_frames,
+            "last_progress_at": self.last_progress_at,
         }
 
     @classmethod
@@ -133,6 +136,7 @@ class GPUJob:
         job.shard_total = d.get("shard_total", 1)
         job.current_frame = d.get("current_frame", 0)
         job.total_frames = d.get("total_frames", 0)
+        job.last_progress_at = d.get("last_progress_at", 0)
         return job
 
 
@@ -281,12 +285,12 @@ class GPUJobQueue:
                 # Skip jobs from orgs that opted out of shared nodes
                 if exclude_orgs and job.org_id and job.org_id in exclude_orgs:
                     continue
-                import time
 
                 del self._queue[i]
                 job.status = JobStatus.RUNNING
                 job.claimed_by = claimer_id
                 job.started_at = time.time()
+                job.last_progress_at = job.started_at
                 self._running_jobs.append(job)
                 logger.info(f"Job claimed [{job.id}] by {claimer_id}: {job.job_type.value} for '{job.clip_name}'")
                 return job
@@ -304,8 +308,6 @@ class GPUJobQueue:
 
     def complete_job(self, job: GPUJob) -> None:
         """Mark a job as successfully completed."""
-        import time
-
         with self._lock:
             job.status = JobStatus.COMPLETED
             job.completed_at = time.time()
@@ -349,6 +351,7 @@ class GPUJobQueue:
             job.claimed_by = None
             job.current_frame = 0
             job.total_frames = 0
+            job.last_progress_at = 0
             if job in self._running_jobs:
                 self._running_jobs.remove(job)
             self._queue.appendleft(job)
@@ -405,6 +408,7 @@ class GPUJobQueue:
                 if job.clip_name == clip_name and job.status == JobStatus.RUNNING:
                     job.current_frame = current
                     job.total_frames = total
+                    job.last_progress_at = time.time()
                     break
         if self.on_progress:
             self.on_progress(clip_name, current, total)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -27,6 +28,10 @@ from ..schemas import (
 from ..tier_guard import require_admin, require_member
 
 logger = logging.getLogger(__name__)
+
+# Max shards created by auto-sharding (when num_shards=0 / pipeline chaining).
+# Explicit num_shards requests from users are still capped at 64 by the Pydantic field.
+MAX_AUTO_SHARDS = int(os.environ.get("CK_MAX_AUTO_SHARDS", "10"))
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"], dependencies=[Depends(require_member)])
 
@@ -303,7 +308,7 @@ def submit_sharded_inference(req: ShardedInferenceRequest, request: Request):
             continue
 
         # Determine shard count
-        num_shards = req.num_shards if req.num_shards > 0 else available_gpus
+        num_shards = req.num_shards if req.num_shards > 0 else min(available_gpus, MAX_AUTO_SHARDS)
         # Don't create shards smaller than min_shard_size
         max_shards = max(1, frame_count // req.min_shard_size)
         num_shards = min(num_shards, max_shards)
@@ -540,7 +545,7 @@ def _build_gvm_jobs(
     min_shard = 20
     params = dict(extra_params) if extra_params else {}
 
-    num_shards = min(len(gpu_names), frame_count // min_shard) if gpu_names else 0
+    num_shards = min(len(gpu_names), frame_count // min_shard, MAX_AUTO_SHARDS) if gpu_names else 0
     if num_shards > 1:
         speed_map = _gpu_speed_weights("gvm_alpha")
         sizes = _weighted_shard_sizes(frame_count, gpu_names[:num_shards], speed_map)
@@ -579,7 +584,7 @@ def _build_inference_shards(
     min_shard = 50
     params = dict(extra_params) if extra_params else {}
 
-    num_shards = min(len(gpu_names), frame_count // min_shard) if gpu_names else 0
+    num_shards = min(len(gpu_names), frame_count // min_shard, MAX_AUTO_SHARDS) if gpu_names else 0
     if num_shards > 1:
         speed_map = _gpu_speed_weights("inference")
         sizes = _weighted_shard_sizes(frame_count, gpu_names[:num_shards], speed_map)

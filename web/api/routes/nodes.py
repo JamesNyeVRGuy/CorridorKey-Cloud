@@ -590,8 +590,11 @@ def report_job_progress(node_id: str, job_id: str, current: int, total: int, req
             raise HTTPException(status_code=403, detail="Job is assigned to a different node")
         # Don't overwrite real frame counts with zeros (cancel check sends 0,0)
         if current > 0 or total > 0:
+            import time as _time
+
             job.current_frame = current
             job.total_frames = total
+            job.last_progress_at = _time.time()
     oid = job.org_id if job else None
     cancelled = job.status.value == "cancelled" if job else False
     if current > 0 or total > 0:
