@@ -115,30 +115,58 @@ def approve_user(user_id: str, request: Request):
     if user.tier != "pending":
         raise HTTPException(status_code=400, detail=f"User is already {user.tier}, not pending")
 
-    # Set tier to member
+    # Set tier to member. Once this succeeds, the user is logically
+    # approved — everything that follows is best-effort bookkeeping
+    # (personal org, starter credits, audit log, notification emails).
+    # Each of those steps gets its own try/except so a single failure
+    # doesn't crash the handler and leave the admin with a 500 for a
+    # user that was in fact approved.
     updated = user_store.set_tier(user_id, "member", approved_by=admin.user_id)
 
-    # Create personal org and grant starter credits
+    warnings: list[str] = []
+
     org_store = get_org_store()
-    personal_org = org_store.ensure_personal_org(user_id, user.email, display_name=user.name)
+    personal_org = None
+    try:
+        personal_org = org_store.ensure_personal_org(user_id, user.email, display_name=user.name)
+    except Exception:
+        logger.exception("approve_user: ensure_personal_org failed for %s", user_id)
+        warnings.append("personal_org_failed")
 
-    from ..gpu_credits import STARTER_CREDITS, add_contributed
+    if personal_org is not None:
+        try:
+            from ..gpu_credits import STARTER_CREDITS, add_contributed
 
-    if STARTER_CREDITS > 0:
-        add_contributed(personal_org.org_id, STARTER_CREDITS)
+            if STARTER_CREDITS > 0:
+                add_contributed(personal_org.org_id, STARTER_CREDITS)
+        except Exception:
+            logger.exception("approve_user: starter credit grant failed for %s", user_id)
+            warnings.append("starter_credits_failed")
 
-    audit_from_request("user.approved", request, target_type="user", target_id=user_id, details={"email": user.email})
+    try:
+        audit_from_request(
+            "user.approved", request, target_type="user", target_id=user_id, details={"email": user.email}
+        )
+    except Exception:
+        logger.exception("approve_user: audit log failed for %s", user_id)
+        warnings.append("audit_failed")
 
-    # Send approval notification email
-    from ..email import send_approval_email, send_approval_otp_email
+    email_sent = False
+    otp_email_sent = False
+    try:
+        from ..email import send_approval_email, send_approval_otp_email
 
-    email_sent = send_approval_email(user.email, user.name)
-    otp_email_sent = send_approval_otp_email(user.email)
+        email_sent = send_approval_email(user.email, user.name)
+        otp_email_sent = send_approval_otp_email(user.email)
+    except Exception:
+        logger.exception("approve_user: email send failed for %s", user_id)
+        warnings.append("email_failed")
 
     return {
         "status": "approved",
         "email_sent": email_sent,
         "otp_email_sent": otp_email_sent,
+        "warnings": warnings,
         "user": updated.to_dict() if updated else None,
     }
 
