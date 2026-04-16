@@ -199,6 +199,8 @@ class JobResultRequest(BaseModel):
     job_id: str
     status: str  # "completed" or "failed"
     error_message: str | None = None
+    download_mbps: float | None = None
+    upload_mbps: float | None = None
 
 
 # --- Registration ---
@@ -645,7 +647,13 @@ def report_job_result(node_id: str, req: JobResultRequest, request: Request):
         if req.status == "completed":
             from ..node_reputation import record_job_completed
 
-            record_job_completed(node_id, job.total_frames, elapsed)
+            record_job_completed(
+                node_id,
+                job.total_frames,
+                elapsed,
+                download_mbps=req.download_mbps,
+                upload_mbps=req.upload_mbps,
+            )
     else:
         # Failed — no credit charge (system fault)
         error_detail = req.error_message or "Unknown error"

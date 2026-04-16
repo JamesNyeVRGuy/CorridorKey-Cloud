@@ -36,6 +36,8 @@ class NodeReputation:
     missed_heartbeats: int = 0
     total_heartbeats: int = 0
     security_warnings: int = 0  # count of security issues detected on registration
+    avg_download_mbps: float = 0.0  # exponential moving average
+    avg_upload_mbps: float = 0.0  # exponential moving average
     last_updated: float = 0.0
 
     @property
@@ -56,6 +58,19 @@ class NodeReputation:
         return max(0, 1.0 - (self.missed_heartbeats / self.total_heartbeats))
 
     @property
+    def transfer_speed(self) -> float:
+        """Combined average transfer speed in MB/s."""
+        speeds = [s for s in (self.avg_download_mbps, self.avg_upload_mbps) if s > 0]
+        return sum(speeds) / len(speeds) if speeds else 0.0
+
+    @property
+    def transfer_score_factor(self) -> float:
+        """0.0 to 1.0 factor for transfer speed. 50 MB/s = full marks."""
+        if self.transfer_speed <= 0:
+            return 1.0  # no data yet, don't penalize new nodes
+        return min(1.0, self.transfer_speed / 50.0)
+
+    @property
     def security_penalty(self) -> float:
         """Penalty for security warnings (0-15 points deducted)."""
         return min(15, self.security_warnings * 5)
@@ -63,7 +78,12 @@ class NodeReputation:
     @property
     def score(self) -> int:
         """Composite reputation score 0-100."""
-        s = (self.success_rate * 50) + (min(1.0, self.avg_fps / 2.0) * 20) + (self.uptime_rate * 30)
+        s = (
+            self.success_rate * 45
+            + min(1.0, self.avg_fps / 2.0) * 20
+            + self.uptime_rate * 25
+            + self.transfer_score_factor * 10
+        )
         s -= self.security_penalty
         return max(0, min(100, round(s)))
 
@@ -74,8 +94,8 @@ class NodeReputation:
             "breakdown": {
                 "success": {
                     "value": round(self.success_rate, 3),
-                    "weight": 50,
-                    "points": round(self.success_rate * 50, 1),
+                    "weight": 45,
+                    "points": round(self.success_rate * 45, 1),
                 },
                 "speed": {
                     "value": round(self.avg_fps, 2),
@@ -84,8 +104,15 @@ class NodeReputation:
                 },
                 "uptime": {
                     "value": round(self.uptime_rate, 3),
-                    "weight": 30,
-                    "points": round(self.uptime_rate * 30, 1),
+                    "weight": 25,
+                    "points": round(self.uptime_rate * 25, 1),
+                },
+                "transfer": {
+                    "download_mbps": round(self.avg_download_mbps, 2),
+                    "upload_mbps": round(self.avg_upload_mbps, 2),
+                    "combined_mbps": round(self.transfer_speed, 2),
+                    "weight": 10,
+                    "points": round(self.transfer_score_factor * 10, 1),
                 },
                 "security_penalty": {"warnings": self.security_warnings, "points": -self.security_penalty},
             },
@@ -103,7 +130,8 @@ class NodeReputation:
 
 _REP_COLS = (
     "node_id, completed_jobs, failed_jobs, total_frames, total_processing_seconds, "
-    "missed_heartbeats, total_heartbeats, security_warnings, last_updated"
+    "missed_heartbeats, total_heartbeats, security_warnings, "
+    "avg_download_mbps, avg_upload_mbps, last_updated"
 )
 
 
@@ -117,7 +145,9 @@ def _row_to_rep(row: tuple) -> NodeReputation:
         missed_heartbeats=int(row[5] or 0),
         total_heartbeats=int(row[6] or 0),
         security_warnings=int(row[7] or 0),
-        last_updated=float(row[8] or 0),
+        avg_download_mbps=float(row[8] or 0),
+        avg_upload_mbps=float(row[9] or 0),
+        last_updated=float(row[10] or 0),
     )
 
 
@@ -175,33 +205,62 @@ def _check_auto_pause(rep: NodeReputation) -> None:
         _auto_pause_node(rep.node_id)
 
 
-def record_job_completed(node_id: str, frames: int, duration_seconds: float) -> NodeReputation:
+def record_job_completed(
+    node_id: str,
+    frames: int,
+    duration_seconds: float,
+    download_mbps: float | None = None,
+    upload_mbps: float | None = None,
+) -> NodeReputation:
     """Record a successful job completion for a node.
 
     Postgres path is an atomic INSERT ... ON CONFLICT DO UPDATE SET
     x = x + ? so parallel completions cannot lose increments.
+    Transfer speeds use exponential moving average (alpha=0.3).
     """
     from .database import get_pg_conn
 
     now = time.time()
     duration = max(0.0, float(duration_seconds))
+    dl = float(download_mbps or 0)
+    ul = float(upload_mbps or 0)
 
     with get_pg_conn() as conn:
         if conn is not None:
             cur = conn.cursor()
+            # EMA logic in SQL: skip update when new value is 0 (shared storage
+            # or old node), use direct assignment when existing is 0 (first
+            # measurement), otherwise blend with alpha=0.3.
             cur.execute(
                 f"""INSERT INTO ck.node_reputations (
                         node_id, completed_jobs, total_frames,
-                        total_processing_seconds, last_updated)
-                    VALUES (%s, 1, %s, %s, %s)
+                        total_processing_seconds, avg_download_mbps,
+                        avg_upload_mbps, last_updated)
+                    VALUES (%s, 1, %s, %s, %s, %s, %s)
                     ON CONFLICT (node_id) DO UPDATE SET
                         completed_jobs = ck.node_reputations.completed_jobs + 1,
                         total_frames = ck.node_reputations.total_frames + EXCLUDED.total_frames,
                         total_processing_seconds = ck.node_reputations.total_processing_seconds
                             + EXCLUDED.total_processing_seconds,
+                        avg_download_mbps = CASE
+                            WHEN EXCLUDED.avg_download_mbps = 0
+                                THEN ck.node_reputations.avg_download_mbps
+                            WHEN ck.node_reputations.avg_download_mbps = 0
+                                THEN EXCLUDED.avg_download_mbps
+                            ELSE ck.node_reputations.avg_download_mbps * 0.7
+                                + EXCLUDED.avg_download_mbps * 0.3
+                        END,
+                        avg_upload_mbps = CASE
+                            WHEN EXCLUDED.avg_upload_mbps = 0
+                                THEN ck.node_reputations.avg_upload_mbps
+                            WHEN ck.node_reputations.avg_upload_mbps = 0
+                                THEN EXCLUDED.avg_upload_mbps
+                            ELSE ck.node_reputations.avg_upload_mbps * 0.7
+                                + EXCLUDED.avg_upload_mbps * 0.3
+                        END,
                         last_updated = EXCLUDED.last_updated
                     RETURNING {_REP_COLS}""",
-                (node_id, frames, duration, now),
+                (node_id, frames, duration, dl, ul, now),
             )
             row = cur.fetchone()
             cur.close()
@@ -209,12 +268,17 @@ def record_job_completed(node_id: str, frames: int, duration_seconds: float) -> 
             _check_auto_pause(rep)
             return rep
 
+    # JSON blob fallback (non-Postgres)
     reps = _load_reputations()
     data = reps.get(node_id, {"node_id": node_id})
     rep = NodeReputation(**data)
     rep.completed_jobs += 1
     rep.total_frames += frames
     rep.total_processing_seconds += duration
+    if dl > 0:
+        rep.avg_download_mbps = dl if rep.avg_download_mbps == 0 else rep.avg_download_mbps * 0.7 + dl * 0.3
+    if ul > 0:
+        rep.avg_upload_mbps = ul if rep.avg_upload_mbps == 0 else rep.avg_upload_mbps * 0.7 + ul * 0.3
     rep.last_updated = now
     reps[node_id] = rep.__dict__
     _save_reputations(reps)

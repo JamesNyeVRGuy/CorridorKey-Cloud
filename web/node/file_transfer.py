@@ -6,17 +6,35 @@ Uses tar bundle downloads for speed, with per-file fallback.
 
 from __future__ import annotations
 
+import dataclasses
 import io
 import logging
 import os
 import tarfile
 import threading
+import time as _time
 from collections.abc import Callable
 from pathlib import Path
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+@dataclasses.dataclass
+class TransferStats:
+    """Tracks bytes transferred and wall-clock time for speed measurement."""
+
+    bytes_transferred: int = 0
+    elapsed_seconds: float = 0.0
+
+    @property
+    def mbps(self) -> float:
+        """Megabytes per second."""
+        if self.elapsed_seconds <= 0:
+            return 0.0
+        return (self.bytes_transferred / (1024 * 1024)) / self.elapsed_seconds
+
 
 # Max concurrent file transfers across all nodes on this machine.
 # Prevents multiple jobs from saturating the network simultaneously.
@@ -35,8 +53,6 @@ _RETRY_DELAY = 3  # seconds
 
 def _with_retry(fn, description: str = "request"):
     """Retry a function on transient HTTP errors."""
-    import time
-
     last_err = None
     for attempt in range(_MAX_RETRIES):
         try:
@@ -45,7 +61,7 @@ def _with_retry(fn, description: str = "request"):
             if e.response.status_code in _RETRY_STATUSES and attempt < _MAX_RETRIES - 1:
                 code = e.response.status_code
                 logger.warning(f"{description}: {code}, retry in {_RETRY_DELAY}s ({attempt + 1}/{_MAX_RETRIES})")
-                time.sleep(_RETRY_DELAY)
+                _time.sleep(_RETRY_DELAY)
                 last_err = e
             else:
                 raise
@@ -92,7 +108,7 @@ class FileTransfer:
         clip_dir: str,
         frame_range: tuple[int, int] | None = None,
         is_cancelled: Callable[[], bool] | None = None,
-    ) -> int:
+    ) -> tuple[int, TransferStats]:
         """Download files for a clip pass into the correct subdirectory.
 
         Tries tar bundle download first (single HTTP request for all files),
@@ -105,13 +121,13 @@ class FileTransfer:
             frame_range: Optional (start, end) to only download frames in range.
             is_cancelled: Optional callback returning True if the job was cancelled.
 
-        Returns the number of files downloaded.
+        Returns (file_count, TransferStats).
         """
         # Try bundle download first
         try:
-            count = self._download_bundle(clip_name, pass_name, clip_dir, frame_range, is_cancelled)
+            count, stats = self._download_bundle(clip_name, pass_name, clip_dir, frame_range, is_cancelled)
             if count > 0:
-                return count
+                return count, stats
         except TransferCancelled:
             raise
         except Exception as e:
@@ -126,7 +142,7 @@ class FileTransfer:
         clip_dir: str,
         frame_range: tuple[int, int] | None,
         is_cancelled: Callable[[], bool] | None = None,
-    ) -> int:
+    ) -> tuple[int, TransferStats]:
         """Download files as a tar stream (single HTTP request)."""
         params = {}
         if frame_range:
@@ -134,19 +150,24 @@ class FileTransfer:
             params["end"] = frame_range[1]
 
         url = self._url(f"{clip_name}/{pass_name}/bundle")
+        net_bytes = 0
         with _transfer_semaphore, httpx.Client(timeout=self.timeout, headers=self._headers) as client:
             with client.stream("GET", url, params=params) as resp:
                 if resp.status_code != 200:
-                    return 0
+                    return 0, TransferStats()
 
-                # Stream tar data and extract
+                # Stream tar data -- time only the network I/O
                 buf = io.BytesIO()
+                t0 = _time.monotonic()
                 for chunk in resp.iter_bytes(chunk_size=8 * 1024 * 1024):
                     if is_cancelled and is_cancelled():
                         raise TransferCancelled(f"Download cancelled: {clip_name}/{pass_name}")
                     buf.write(chunk)
+                net_elapsed = _time.monotonic() - t0
+                net_bytes = buf.tell()
                 buf.seek(0)
 
+                # Extract tar (CPU work, not timed)
                 count = 0
                 with tarfile.open(fileobj=buf, mode="r|") as tar:
                     for member in tar:
@@ -159,9 +180,12 @@ class FileTransfer:
                                     f.write(extracted.read())
                             count += 1
 
+        stats = TransferStats(bytes_transferred=net_bytes, elapsed_seconds=net_elapsed)
         directory = resp.headers.get("x-tar-directory", pass_name)
-        logger.info(f"Downloaded {count} files (bundle) for {clip_name}/{pass_name} → {directory}/")
-        return count
+        logger.info(
+            f"Downloaded {count} files (bundle, {stats.mbps:.1f} MB/s) for {clip_name}/{pass_name} -> {directory}/"
+        )
+        return count, stats
 
     def _download_per_file(
         self,
@@ -170,11 +194,11 @@ class FileTransfer:
         clip_dir: str,
         frame_range: tuple[int, int] | None,
         is_cancelled: Callable[[], bool] | None = None,
-    ) -> int:
+    ) -> tuple[int, TransferStats]:
         """Download files one at a time (fallback)."""
         directory, files = self.list_files(clip_name, pass_name)
         if not files or not directory:
-            return 0
+            return 0, TransferStats()
 
         if frame_range is not None:
             start, end = frame_range
@@ -183,6 +207,8 @@ class FileTransfer:
         dest_dir = os.path.join(clip_dir, directory)
         os.makedirs(dest_dir, exist_ok=True)
         count = 0
+        total_bytes = 0
+        total_elapsed = 0.0
 
         for fname in files:
             if is_cancelled and is_cancelled():
@@ -195,8 +221,10 @@ class FileTransfer:
 
             url = self._url(f"{clip_name}/{pass_name}/{fname}")
             tmp_path = dest_path + ".part"
+            file_bytes = 0
 
             def _do_download(u=url, tp=tmp_path, dp=dest_path):
+                nonlocal file_bytes
                 with _transfer_semaphore, httpx.Client(timeout=self.timeout, headers=self._headers) as client:
                     try:
                         with client.stream("GET", u) as resp:
@@ -204,17 +232,22 @@ class FileTransfer:
                             with open(tp, "wb") as f:
                                 for chunk in resp.iter_bytes(chunk_size=8 * 1024 * 1024):
                                     f.write(chunk)
+                                    file_bytes += len(chunk)
                         os.replace(tp, dp)
                     except Exception:
                         if os.path.isfile(tp):
                             os.remove(tp)
                         raise
 
+            t0 = _time.monotonic()
             _with_retry(_do_download, f"Download {fname}")
+            total_elapsed += _time.monotonic() - t0
+            total_bytes += file_bytes
             count += 1
 
-        logger.info(f"Downloaded {count} files for {clip_name}/{pass_name} → {directory}/")
-        return count
+        stats = TransferStats(bytes_transferred=total_bytes, elapsed_seconds=total_elapsed)
+        logger.info(f"Downloaded {count} files ({stats.mbps:.1f} MB/s) for {clip_name}/{pass_name} -> {directory}/")
+        return count, stats
 
     def upload_file(self, clip_name: str, pass_name: str, file_path: str) -> None:
         """Upload a single result file to the main machine."""
@@ -235,26 +268,26 @@ class FileTransfer:
         pass_name: str,
         src_dir: str,
         is_cancelled: Callable[[], bool] | None = None,
-    ) -> int:
+    ) -> tuple[int, TransferStats]:
         """Upload all files in a directory as results.
 
         Tries tar bundle upload first (single HTTP request), falls back
         to per-file upload if bundle endpoint isn't available.
 
-        Returns the number of files uploaded.
+        Returns (file_count, TransferStats).
         """
         if not os.path.isdir(src_dir):
-            return 0
+            return 0, TransferStats()
 
         files = sorted(f for f in os.listdir(src_dir) if os.path.isfile(os.path.join(src_dir, f)))
         if not files:
-            return 0
+            return 0, TransferStats()
 
         # Try bundle upload first
         try:
-            count = self._upload_bundle(clip_name, pass_name, src_dir, files, is_cancelled)
+            count, stats = self._upload_bundle(clip_name, pass_name, src_dir, files, is_cancelled)
             if count > 0:
-                return count
+                return count, stats
         except TransferCancelled:
             raise
         except Exception as e:
@@ -262,15 +295,19 @@ class FileTransfer:
 
         # Per-file fallback
         count = 0
+        total_bytes = 0
+        t0 = _time.monotonic()
         for fname in files:
             if is_cancelled and is_cancelled():
                 raise TransferCancelled(f"Upload cancelled: {clip_name}/{pass_name}")
             fpath = os.path.join(src_dir, fname)
+            total_bytes += os.path.getsize(fpath)
             self.upload_file(clip_name, pass_name, fpath)
             count += 1
 
-        logger.info(f"Uploaded {count} files (per-file) for {clip_name}/{pass_name}")
-        return count
+        stats = TransferStats(bytes_transferred=total_bytes, elapsed_seconds=_time.monotonic() - t0)
+        logger.info(f"Uploaded {count} files (per-file, {stats.mbps:.1f} MB/s) for {clip_name}/{pass_name}")
+        return count, stats
 
     # Max compressed bundle size per upload (stay under Cloudflare's 100MB limit)
     _MAX_BUNDLE_BYTES = 90 * 1024 * 1024
@@ -282,7 +319,7 @@ class FileTransfer:
         src_dir: str,
         files: list[str],
         is_cancelled: Callable[[], bool] | None = None,
-    ) -> int:
+    ) -> tuple[int, TransferStats]:
         """Upload files as gzip-compressed tar chunks.
 
         Splits into multiple uploads if the compressed size exceeds 90MB
@@ -290,11 +327,12 @@ class FileTransfer:
         that the server extracts independently.
         """
 
-        # Build tar in memory and check size — split into chunks if needed
+        # Build tar in memory and check size -- split into chunks if needed
         chunks = self._build_tar_chunks(src_dir, files)
 
         total_count = 0
         total_bytes = 0
+        net_elapsed = 0.0
         url = self._url(f"{clip_name}/{pass_name}/bundle")
 
         for i, compressed in enumerate(chunks):
@@ -317,18 +355,24 @@ class FileTransfer:
                     r.raise_for_status()
                     return r.json()
 
+            t0 = _time.monotonic()
             data = _with_retry(_do_chunk, f"Bundle chunk {i + 1}/{len(chunks)}")
+            net_elapsed += _time.monotonic() - t0
             chunk_count = data.get("count", 0)
             total_count += chunk_count
             if len(chunks) > 1:
                 logger.info(
-                    f"  Chunk {i + 1}/{len(chunks)}: {len(compressed) / (1024 * 1024):.0f}MB → {chunk_count} files"
+                    f"  Chunk {i + 1}/{len(chunks)}: {len(compressed) / (1024 * 1024):.0f}MB -> {chunk_count} files"
                 )
 
+        stats = TransferStats(bytes_transferred=total_bytes, elapsed_seconds=net_elapsed)
         mb = total_bytes / (1024 * 1024)
         chunk_info = f", {len(chunks)} chunks" if len(chunks) > 1 else ""
-        logger.info(f"Uploaded {total_count} files (bundle, {mb:.1f}MB gzip{chunk_info}) for {clip_name}/{pass_name}")
-        return total_count
+        logger.info(
+            f"Uploaded {total_count} files (bundle, {mb:.1f}MB gzip{chunk_info}, "
+            f"{stats.mbps:.1f} MB/s) for {clip_name}/{pass_name}"
+        )
+        return total_count, stats
 
     def _build_tar_chunks(self, src_dir: str, files: list[str]) -> list[bytes]:
         """Build gzip-compressed tar chunks, each under _MAX_BUNDLE_BYTES.
@@ -337,7 +381,6 @@ class FileTransfer:
         Only one chunk is in memory at a time — peak RAM = one chunk (~90MB).
         """
         import gzip
-        import time as _time
 
         total_raw = sum(os.path.getsize(os.path.join(src_dir, f)) for f in files)
         total_mb = total_raw / (1024 * 1024)
