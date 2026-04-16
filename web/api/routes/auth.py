@@ -37,6 +37,7 @@ class SignupRequest(BaseModel):
     password: str
     name: str = ""
     invite_token: str = ""
+    captcha_token: str = ""
 
 
 class RegisterRequest(BaseModel):
@@ -48,6 +49,52 @@ class RegisterRequest(BaseModel):
     company: str = ""
     role: str = ""
     use_case: str = ""
+    captcha_token: str = ""
+
+
+# Cloudflare Turnstile verification. When CK_TURNSTILE_SECRET_KEY is
+# set, signup/register endpoints require a valid captcha_token from
+# the frontend widget. When unset, captcha is disabled (self-hosted
+# deployments that don't need it).
+_TURNSTILE_SECRET = os.environ.get("CK_TURNSTILE_SECRET_KEY", "").strip()
+
+
+def _verify_captcha(token: str, remote_ip: str | None = None) -> None:
+    """Verify a Cloudflare Turnstile token. Raises HTTPException on failure.
+
+    No-op when CK_TURNSTILE_SECRET_KEY is not configured, so
+    self-hosted deployments work without a Cloudflare account.
+    """
+    if not _TURNSTILE_SECRET:
+        return
+    if not token:
+        raise HTTPException(status_code=400, detail="CAPTCHA verification required")
+
+    import urllib.request
+
+    try:
+        body = json.dumps({
+            "secret": _TURNSTILE_SECRET,
+            "response": token,
+            **({"remoteip": remote_ip} if remote_ip else {}),
+        }).encode()
+        req = urllib.request.Request(
+            "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            result = json.loads(resp.read())
+        if not result.get("success"):
+            logger.warning("Turnstile verification failed: %s", result.get("error-codes", []))
+            raise HTTPException(status_code=400, detail="CAPTCHA verification failed")
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Turnstile API unreachable. Fail open so signups don't break
+        # if Cloudflare is down, but log it so ops knows.
+        logger.warning("Turnstile API error (failing open): %s", e)
 
 
 class InviteTokenResponse(BaseModel):
@@ -301,9 +348,15 @@ def forgot_password(req: ForgotPasswordRequest):
 
 @router.get("/status")
 def auth_status():
-    """Check if auth is enabled and return configuration hints."""
+    """Check if auth is enabled and return configuration hints.
+
+    The turnstile_site_key is included so the frontend can render
+    the Turnstile widget without hardcoding the key. When empty,
+    the frontend skips the widget entirely.
+    """
     return {
         "auth_enabled": AUTH_ENABLED,
+        "turnstile_site_key": os.environ.get("CK_TURNSTILE_SITE_KEY", "").strip(),
     }
 
 
@@ -367,7 +420,7 @@ def consume_invite_token(token: str, email: str):
 
 
 @router.post("/signup")
-def signup_with_invite(req: SignupRequest):
+def signup_with_invite(req: SignupRequest, request: Request):
     """Server-side signup: validate invite, create GoTrue user, consume invite.
 
     This replaces the frontend's direct GoTrue signup call so that
@@ -380,6 +433,8 @@ def signup_with_invite(req: SignupRequest):
         raise HTTPException(status_code=400, detail="Email and password required")
     if not req.invite_token:
         raise HTTPException(status_code=400, detail="Invite token required")
+
+    _verify_captcha(req.captcha_token, request.client.host if request.client else None)
 
     # Validate and consume invite atomically BEFORE calling GoTrue.
     # This prevents TOCTOU: two concurrent signups with the same invite
@@ -486,7 +541,7 @@ def signup_with_invite(req: SignupRequest):
 
 
 @router.post("/register")
-def open_register(req: RegisterRequest):
+def open_register(req: RegisterRequest, request: Request):
     """Open registration — no invite token required (CRKY-103).
 
     Creates a GoTrue user via admin API with tier=pending. Users must
@@ -497,6 +552,8 @@ def open_register(req: RegisterRequest):
         raise HTTPException(status_code=400, detail="Auth is not enabled")
     if not req.email or not req.password:
         raise HTTPException(status_code=400, detail="Email and password required")
+
+    _verify_captcha(req.captcha_token, request.client.host if request.client else None)
 
     # Anti-enumeration: return the same 200 response regardless of
     # whether the email already exists. Attackers probing common

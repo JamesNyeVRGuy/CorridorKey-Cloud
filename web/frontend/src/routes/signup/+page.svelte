@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 
 	let email = $state('');
@@ -12,6 +13,41 @@
 	let tosAccepted = $state(false);
 	let created = $state(false);
 
+	// Cloudflare Turnstile (CAPTCHA)
+	let turnstileSiteKey = $state('');
+	let captchaToken = $state('');
+	let turnstileContainer: HTMLDivElement | undefined = $state();
+	let turnstileWidgetId: string | null = null;
+
+	onMount(async () => {
+		try {
+			const res = await fetch('/api/auth/status');
+			if (res.ok) {
+				const data = await res.json();
+				turnstileSiteKey = data.turnstile_site_key || '';
+			}
+		} catch { /* ignore */ }
+	});
+
+	// Render the Turnstile widget once we have the site key AND the container.
+	// Using $effect so it rerenders if the key or container change.
+	$effect(() => {
+		if (!turnstileSiteKey || !turnstileContainer) return;
+		const w = (window as any).turnstile;
+		if (!w) return;
+		// Remove any previously rendered widget (re-render on reset).
+		if (turnstileWidgetId !== null) {
+			try { w.remove(turnstileWidgetId); } catch { /* ignore */ }
+		}
+		turnstileWidgetId = w.render(turnstileContainer, {
+			sitekey: turnstileSiteKey,
+			theme: 'dark',
+			callback: (token: string) => { captchaToken = token; },
+			'expired-callback': () => { captchaToken = ''; },
+			'error-callback': () => { captchaToken = ''; },
+		});
+	});
+
 	async function handleSignup() {
 		if (!tosAccepted) {
 			error = 'You must accept the Terms of Service to create an account.';
@@ -19,6 +55,10 @@
 		}
 		if (!email || !password) {
 			error = 'Email and password required';
+			return;
+		}
+		if (turnstileSiteKey && !captchaToken) {
+			error = 'Please complete the CAPTCHA verification.';
 			return;
 		}
 		loading = true;
@@ -33,12 +73,18 @@
 					name,
 					company,
 					role,
-					use_case: useCase
+					use_case: useCase,
+					captcha_token: captchaToken,
 				})
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({ detail: 'Signup failed' }));
 				error = data.detail ?? 'Signup failed';
+				// Reset the Turnstile widget so the user can retry.
+				if (turnstileWidgetId !== null) {
+					try { (window as any).turnstile?.reset(turnstileWidgetId); } catch { /* ignore */ }
+					captchaToken = '';
+				}
 				return;
 			}
 
@@ -119,7 +165,10 @@
 				<input type="checkbox" bind:checked={tosAccepted} />
 				<span>I agree to not redistribute content processed through this platform</span>
 			</label>
-			<button class="auth-btn" onclick={handleSignup} disabled={loading || !tosAccepted}>
+			{#if turnstileSiteKey}
+				<div class="turnstile-wrap" bind:this={turnstileContainer}></div>
+			{/if}
+			<button class="auth-btn" onclick={handleSignup} disabled={loading || !tosAccepted || (!!turnstileSiteKey && !captchaToken)}>
 				{loading ? 'Creating account...' : 'Create Account'}
 			</button>
 		</div>
@@ -250,6 +299,12 @@
 		margin-top: 2px;
 		accent-color: var(--accent);
 		cursor: pointer;
+	}
+
+	.turnstile-wrap {
+		display: flex;
+		justify-content: center;
+		min-height: 65px;
 	}
 
 	.confirm-msg {
