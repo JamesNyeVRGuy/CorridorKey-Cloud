@@ -179,6 +179,58 @@ def get_node_logs(node_id: str, request: Request):
     return {"logs": node.recent_logs}
 
 
+@router.get("/{node_id}/metrics")
+def get_node_metrics(node_id: str, request: Request):
+    """Get performance metrics for a node: reputation breakdown + recent job history.
+
+    Accessible to any user who can see the node. Job history is anonymized
+    (no clip names or submitter info for non-managers).
+    """
+    node = _require_node_access(request, node_id)
+    user = _get_user(request)
+    can_manage = _user_can_manage_node(user, node)
+
+    # Reputation
+    from ..node_reputation import get_reputation
+
+    rep = get_reputation(node_id)
+
+    # Recent jobs claimed by this node (from in-memory queue history)
+    from ..deps import get_queue
+
+    queue = get_queue()
+    all_jobs = queue.all_jobs_snapshot
+    node_jobs = [j for j in all_jobs if j.claimed_by == node_id]
+    # Sort newest first, cap at 50
+    node_jobs.sort(key=lambda j: j.completed_at or j.started_at, reverse=True)
+    node_jobs = node_jobs[:50]
+
+    job_list = []
+    for j in node_jobs:
+        duration = (j.completed_at - j.started_at) if j.completed_at and j.started_at else 0
+        fps = j.total_frames / duration if duration > 0 and j.total_frames > 0 else 0
+        entry: dict = {
+            "job_id": j.id,
+            "job_type": j.job_type.value,
+            "status": j.status.value,
+            "total_frames": j.total_frames,
+            "duration_seconds": round(duration, 1),
+            "fps": round(fps, 2),
+            "started_at": j.started_at,
+            "completed_at": j.completed_at,
+        }
+        # Only show clip name to managers
+        if can_manage:
+            entry["clip_name"] = j.clip_name
+        job_list.append(entry)
+
+    return {
+        "node_id": node_id,
+        "reputation": rep.to_dict(),
+        "jobs": job_list,
+    }
+
+
 # --- Management actions (require org admin) ---
 
 
