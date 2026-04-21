@@ -600,6 +600,13 @@
     .mobile-banner {
       display: block;
     }
+    /* CRKY-192: hide the sidebar on mobile to stop the 280px-wide rail
+       from overflowing small viewports. The existing mobile banner
+       explains the app is desktop-only; proper mobile nav is tracked
+       in CRKY-202. */
+    .sidebar {
+      display: none;
+    }
   }
   .layout-root {
     /* CRKY-199: wrap banner + shell so their heights compose properly.
