@@ -303,10 +303,31 @@ def create_app() -> FastAPI:
     # Solution: RateLimit added FIRST (innermost), Auth second, GZip last.
     # Execution: GZip → Auth (injects user) → RateLimit (reads user) → Route
     from .rate_limit import RateLimitMiddleware
+    from fastapi.middleware.cors import CORSMiddleware
 
     app.add_middleware(RateLimitMiddleware)  # innermost — runs after auth
     app.add_middleware(AuthMiddleware)  # middle — injects user context
     app.add_middleware(GZipMiddleware, minimum_size=1000)  # outermost — compression
+    cors_origins = [
+        origin.strip()
+        for origin in os.environ.get(
+            "CK_CORS_ORIGINS",
+            "https://corridorkey.cloud,http://localhost:3000,http://127.0.0.1:3000",
+        ).split(",")
+        if origin.strip()
+    ]
+    file_base = os.environ.get("CKWEB_FILE_BASE", "").strip().rstrip("/")
+    if file_base:
+        file_origin = file_base if "://" in file_base else f"https://{file_base}"
+        if file_origin not in cors_origins:
+            cors_origins.append(file_origin)
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     if AUTH_ENABLED:
         logger.info("Auth enabled — JWT validation active on API routes")

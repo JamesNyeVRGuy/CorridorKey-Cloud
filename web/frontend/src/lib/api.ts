@@ -3,6 +3,16 @@
 import { getToken, refreshToken, logout, getActiveOrgId } from '$lib/auth';
 
 const BASE = '';
+const RAW_FILE_BASE = `${import.meta.env.CKWEB_FILE_BASE ?? ''}`.trim();
+
+export function getFileTransferBase(): string {
+	if (typeof window === 'undefined') return BASE;
+	if (!RAW_FILE_BASE) return BASE;
+	const withScheme = /^https?:\/\//i.test(RAW_FILE_BASE)
+		? RAW_FILE_BASE
+		: `${window.location.protocol}//${RAW_FILE_BASE}`;
+	return withScheme.replace(/\/+$/, '');
+}
 
 /** Attach auth + org headers to a request. */
 async function attachAuth(headers: Record<string, string>): Promise<void> {
@@ -68,11 +78,12 @@ export type UploadProgressFn = (loaded: number, total: number) => void;
 async function uploadRequest<T>(path: string, form: FormData, onProgress?: UploadProgressFn): Promise<T> {
 	const headers: Record<string, string> = {};
 	await attachAuth(headers);
+	const base = getFileTransferBase();
 
 	// Use XMLHttpRequest for progress tracking
 	return new Promise<T>((resolve, reject) => {
 		const xhr = new XMLHttpRequest();
-		xhr.open('POST', `${BASE}${path}`);
+		xhr.open('POST', `${base}${path}`);
 		for (const [k, v] of Object.entries(headers)) {
 			xhr.setRequestHeader(k, v);
 		}
@@ -385,7 +396,8 @@ export const api = {
 	},
 	preview: {
 		url: (clipName: string, passName: string, frame: number, width?: number) => {
-			const base = `${BASE}/api/preview/${encodeURIComponent(clipName)}/${passName}/${frame}`;
+			const fileBase = getFileTransferBase();
+			const base = `${fileBase}/api/preview/${encodeURIComponent(clipName)}/${passName}/${frame}`;
 			const params = new URLSearchParams();
 			const token = localStorage.getItem('ck:auth_token');
 			if (token) params.set('token', token);

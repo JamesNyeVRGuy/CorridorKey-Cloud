@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { api } from '$lib/api';
+	import { api, getFileTransferBase } from '$lib/api';
 	import type { Clip, InferenceParams, OutputConfig } from '$lib/api';
 	import { getActiveOrgId } from '$lib/auth';
 	import { defaultParams, defaultOutputConfig, autoShard } from '$lib/stores/settings';
@@ -23,7 +23,7 @@
 		if (token) params.set('token', token);
 		const orgId = getActiveOrgId();
 		if (orgId) params.set('org', orgId);
-		return `/api/preview/${encodeURIComponent(clipName)}/${pass}/download?${params.toString()}`;
+		return `${getFileTransferBase()}/api/preview/${encodeURIComponent(clipName)}/${pass}/download?${params.toString()}`;
 	}
 
 	let params = $state<InferenceParams>({ ...$defaultParams });

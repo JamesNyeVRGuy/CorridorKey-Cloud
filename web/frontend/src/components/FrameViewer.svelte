@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api } from '$lib/api';
+	import { api, getFileTransferBase } from '$lib/api';
 	import { getActiveOrgId } from '$lib/auth';
 	import { onMount } from 'svelte';
 
@@ -147,8 +147,9 @@
 				if (tk) headers['Authorization'] = `Bearer ${tk}`;
 				const orgId = localStorage.getItem('ck:active_org');
 				if (orgId) headers['X-Org-Id'] = orgId;
+				const base = getFileTransferBase();
 				const res = await fetch(
-					`/api/preview/${encodeURIComponent(clipName)}/${selectedPass}/video/progress?fps=${playbackFps}`,
+					`${base}/api/preview/${encodeURIComponent(clipName)}/${selectedPass}/video/progress?fps=${playbackFps}`,
 					{ headers }
 				);
 				const data = await res.json();
@@ -228,11 +229,15 @@
 	}
 
 	let videoUrl = $derived(
-		frameCount > 0 ? authUrl(`/api/preview/${encodeURIComponent(clipName)}/${selectedPass}/video?fps=${playbackFps}`) : null
+		frameCount > 0
+			? authUrl(`${getFileTransferBase()}/api/preview/${encodeURIComponent(clipName)}/${selectedPass}/video?fps=${playbackFps}`)
+			: null
 	);
 
 	let downloadUrl = $derived(
-		frameCount > 0 ? authUrl(`/api/preview/${encodeURIComponent(clipName)}/${selectedPass}/download`) : null
+		frameCount > 0
+			? authUrl(`${getFileTransferBase()}/api/preview/${encodeURIComponent(clipName)}/${selectedPass}/download`)
+			: null
 	);
 
 	const passLabels: Record<string, string> = {

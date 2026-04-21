@@ -29,7 +29,7 @@ TIER_LIMITS = {
     "member": {
         "max_frames": 500,
         "max_concurrent": 3,
-        "max_resolution": 1080,
+        "max_resolution": 1280,
         "max_fps": 60,
         "max_duration": 30,
     },
