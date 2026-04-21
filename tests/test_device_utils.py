@@ -12,6 +12,9 @@ import torch
 
 from device_utils import (
     DEVICE_ENV_VAR,
+    MIN_CUDA_COMPUTE_CAPABILITY,
+    GPUInfo,
+    check_gpu_torch_compat,
     clear_device_cache,
     detect_best_device,
     resolve_device,
@@ -170,3 +173,62 @@ class TestClearDeviceCache:
         monkeypatch.setattr(torch.mps, "empty_cache", mock_empty)
         clear_device_cache(torch.device("mps"))
         mock_empty.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# check_gpu_torch_compat
+# ---------------------------------------------------------------------------
+
+
+class TestCheckGpuTorchCompat:
+    """Gate GPUs by the torch build's minimum compute capability (CRKY-188)."""
+
+    def _make(self, cc: str) -> GPUInfo:
+        return GPUInfo(index=0, name="Test GPU", vram_total_gb=24.0, vram_free_gb=24.0, compute_capability=cc)
+
+    def test_pascal_rejected(self):
+        # GTX 1080 Ti is sm_61, torch 2.8.0 requires >= 7.0
+        ok, reason = check_gpu_torch_compat(self._make("6.1"))
+        assert ok is False
+        assert "6.1" in reason
+        assert "below the minimum" in reason
+
+    def test_maxwell_rejected(self):
+        # Quadro M4000 is sm_52, far below minimum
+        ok, reason = check_gpu_torch_compat(self._make("5.2"))
+        assert ok is False
+        assert "5.2" in reason
+
+    def test_volta_accepted(self):
+        # Titan V is sm_70, exactly at the minimum
+        ok, reason = check_gpu_torch_compat(self._make("7.0"))
+        assert ok is True
+        assert reason == ""
+
+    def test_turing_accepted(self):
+        ok, _ = check_gpu_torch_compat(self._make("7.5"))
+        assert ok is True
+
+    def test_ampere_accepted(self):
+        ok, _ = check_gpu_torch_compat(self._make("8.6"))
+        assert ok is True
+
+    def test_blackwell_accepted(self):
+        # RTX 5090 is sm_120
+        ok, _ = check_gpu_torch_compat(self._make("12.0"))
+        assert ok is True
+
+    def test_empty_cc_not_gated(self):
+        # AMD GPUs have empty compute_capability; don't block them here
+        ok, reason = check_gpu_torch_compat(self._make(""))
+        assert ok is True
+        assert reason == ""
+
+    def test_unparseable_cc_not_gated(self):
+        ok, _ = check_gpu_torch_compat(self._make("gfx1030"))
+        assert ok is True
+
+    def test_min_constant_matches_torch_2_8(self):
+        # The minimum should match what torch 2.8.0 cu128 supports.
+        # If this assert fails, update the pin deliberately — not by accident.
+        assert MIN_CUDA_COMPUTE_CAPABILITY == (7, 0)

@@ -17,7 +17,7 @@ from pathlib import Path
 
 import httpx
 
-from device_utils import check_gpu_available, enumerate_gpus, get_cpu_stats
+from device_utils import check_gpu_available, check_gpu_torch_compat, enumerate_gpus, get_cpu_stats
 
 from . import config
 from .file_transfer import FileTransfer
@@ -698,6 +698,35 @@ class NodeAgent:
             # clobber the failure with "completed 0 frames".
             raise RuntimeError(failure)
 
+    def _check_gpu_compatibility(self) -> bool:
+        """Verify selected GPUs meet the minimum compute capability for this torch build.
+
+        If any selected GPU is incompatible, log a clear error and return False.
+        The caller should exit instead of proceeding to register — otherwise the
+        node would accept jobs it can't run, silently fail them, and keep polling.
+        """
+        gpus = enumerate_gpus()
+        selected = [g for g in gpus if g.index in self._gpu_indices]
+        if not selected:
+            # No GPUs detected or selected — fall through to normal flow,
+            # torch / CPU-only mode will handle it.
+            return True
+        incompatible: list[str] = []
+        for g in selected:
+            ok, reason = check_gpu_torch_compat(g)
+            if not ok:
+                incompatible.append(reason)
+        if incompatible:
+            logger.error("Node GPU hardware is incompatible with this node build:")
+            for msg in incompatible:
+                logger.error(f"  - {msg}")
+            logger.error(
+                "See https://corridorkey.cloud/nodes/setup for supported hardware. "
+                "The agent will exit instead of accepting jobs it cannot run."
+            )
+            return False
+        return True
+
     def run(self) -> None:
         """Main loop — sync weights, register, then poll for jobs."""
         logger.info(f"CorridorKey Node Agent starting: {self.name} ({self.node_id})")
@@ -705,6 +734,14 @@ class NodeAgent:
         logger.info(f"GPUs: {self._gpu_indices}")
         if self.shared_storage:
             logger.info(f"Shared storage: {self.shared_storage}")
+
+        # Hard gate: refuse to run if selected GPUs are below the torch build's
+        # minimum compute capability. Without this the node accepts jobs and
+        # silently fails them on every kernel launch (CRKY-188).
+        if not self._check_gpu_compatibility():
+            if self.tray:
+                self.tray.set_status("error")
+            return
 
         # Sync weights from main server before doing anything else
         logger.info("Checking model weights...")
