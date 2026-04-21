@@ -80,7 +80,12 @@ class TestResolveClipsDir:
         assert str(setup_isolation) in result
         assert result != str(setup_isolation)
 
-    def test_explicit_org_id_validated(self, setup_isolation, monkeypatch):
+    def test_explicit_org_id_not_member_falls_back_to_personal(self, setup_isolation, monkeypatch):
+        """CRKY-196: when the client sends an X-Org-Id the user isn't a member
+        of (usually a stale cached value after a membership change), fall
+        back to the user's personal org instead of raising 403. The user
+        still only sees their own data, and uploads / clip browsing succeed
+        instead of looking broken."""
         import web.api.org_isolation as mod
 
         monkeypatch.setattr(mod, "AUTH_ENABLED", True)
@@ -90,12 +95,13 @@ class TestResolveClipsDir:
         store = get_org_store()
         org = store.create_org("Other Studio", "user-2")
 
-        # user-1 is NOT a member of this org
+        # user-1 is NOT a member of the other org
         user = UserContext(user_id="user-1", email="a@b.com", tier="member")
         request = _make_request(user=user)
-        with pytest.raises(Exception) as exc_info:
-            resolve_clips_dir(request, org_id=org.org_id)
-        assert exc_info.value.status_code == 403
+        result = resolve_clips_dir(request, org_id=org.org_id)
+        # Resolves to user-1's personal org, not the org they tried to access
+        assert str(setup_isolation) in result
+        assert org.org_id not in result
 
     def test_admin_can_access_any_org(self, setup_isolation, monkeypatch):
         import web.api.org_isolation as mod

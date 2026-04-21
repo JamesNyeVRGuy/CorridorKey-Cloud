@@ -60,10 +60,20 @@ def resolve_clips_dir(request: Request, org_id: str | None = None) -> str:
         org_id = request.query_params.get("org", "").strip() or None
 
     if org_id:
-        # Validate user is a member of the requested org
+        # Validate user is a member of the requested org. If not — usually a
+        # stale X-Org-Id in localStorage after an org membership change — fall
+        # back to the user's personal org instead of a hard 403. Vapyr hit this
+        # (CRKY-196): settings page showed membership (from the JWT tier) while
+        # uploads failed with "Not a member" because the frontend was sending
+        # an org_id he'd been removed from / never joined.
         if not user.is_admin and not store.is_member(org_id, user.user_id):
-            raise HTTPException(status_code=403, detail="Not a member of this org")
-    else:
+            logger.warning(
+                "User %s sent X-Org-Id=%s but is not a member; falling back to personal org",
+                user.user_id,
+                org_id,
+            )
+            org_id = None  # fall through to personal-org resolution below
+    if not org_id:
         # Default to first org (personal org)
         user_orgs = store.list_user_orgs(user.user_id)
         if not user_orgs:
