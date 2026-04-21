@@ -366,6 +366,46 @@ class NodeAgent:
             with self._busy_lock:
                 self._busy_gpus.discard(gpu_index)
 
+    def _verify_output_produced(self, job_type: str, clip_dir: str) -> None:
+        """Raise if the expected output directory is empty after a run.
+
+        Catches the "finished successfully but produced no frames" silent-
+        failure case (CRKY-189) where torch ops skip on unsupported hardware,
+        a lib crashes after emitting a success, or a shard ends up with zero
+        input frames. Without this guard those jobs ride the normal completion
+        path and show up as "completed 0 frames" in the user's UI.
+        """
+        if job_type in ("gvm_alpha", "videomama_alpha"):
+            out_dir = os.path.join(clip_dir, "AlphaHint")
+        elif job_type == "inference":
+            # Inference writes at least one of FG/Matte/Comp/Processed. Consider
+            # the run successful if any of these has content.
+            candidates = [
+                os.path.join(clip_dir, "Output", sub) for sub in ("Processed", "Matte", "FG", "Comp")
+            ]
+            for d in candidates:
+                if os.path.isdir(d) and any(os.path.isfile(os.path.join(d, f)) for f in os.listdir(d)):
+                    return
+            raise RuntimeError(
+                f"Job finished but produced no output frames in any of "
+                f"Output/{{FG,Matte,Comp,Processed}} under '{clip_dir}'. "
+                "Likely a silent failure in the inference path."
+            )
+        else:
+            return  # unknown job_type, skip the check
+        if not os.path.isdir(out_dir):
+            raise RuntimeError(
+                f"Job finished but output directory '{out_dir}' was never created. "
+                "Likely a silent failure before any frame was written."
+            )
+        has_files = any(os.path.isfile(os.path.join(out_dir, f)) for f in os.listdir(out_dir))
+        if not has_files:
+            raise RuntimeError(
+                f"Job finished but output directory '{out_dir}' is empty. "
+                "Likely a silent failure (unsupported GPU op, crashed library, "
+                "or empty input shard)."
+            )
+
     def _process_job(self, job_data: dict, gpu_index: int = 0) -> None:
         """Process a job -- run inference using a GPU subprocess or in-process."""
         from .file_transfer import TransferStats
@@ -397,6 +437,12 @@ class NodeAgent:
             self._run_single_gpu(job_data, clips_dir)
         else:
             self._run_subprocess_gpu(job_data, clips_dir, gpu_index)
+
+        # Verify output was actually produced before we report completion.
+        # Catches silent failures (e.g. torch op skipped on unsupported GPU,
+        # libs crash after emitting success, empty input shard).
+        clip_output_dir = os.path.join(clips_dir, clip_name)
+        self._verify_output_produced(job_data.get("job_type", ""), clip_output_dir)
 
         # Check cancellation before uploading (avoid wasting bandwidth)
         if self._is_cancelled(job_id):
