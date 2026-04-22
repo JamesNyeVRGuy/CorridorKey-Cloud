@@ -504,8 +504,34 @@ def get_cpu_stats() -> CPUStats:
 def check_gpu_available(gpu_index: int = 0, min_free_gb: float = 0.0) -> tuple[bool, str]:
     """Check if a GPU is available for CorridorKey work.
 
-    Checks GPU utilization via nvidia-smi or amd-smi. If another process
+    Checks GPU utilization via nvidia-smi, amd-smi, or torch. If another process
     is using significant GPU compute (>50% utilization), the GPU is busy.
+
+    Returns:
+        (available, reason) — True if GPU can accept work, else False with reason.
+    """
+    # Try nvidia-smi
+    result = _check_nvidia_available(gpu_index, min_free_gb)
+    if result is not None:
+        return result
+
+    # Try amd-smi
+    result = _check_amd_available(gpu_index, min_free_gb)
+    if result is not None:
+        return result
+
+    # Try torch if available
+    if torch.cuda.is_available():
+        result = _check_torch_available(gpu_index, min_free_gb)
+        if result is not None:
+            return result
+
+    # Fallback to assuming GPU is available.
+    return True, "gpu monitoring unavailable"
+
+
+def _check_nvidia_available(gpu_index: int, min_free_gb: float) -> tuple[bool, str] | None:
+    """Checks GPU utilization via nvidia-smi.
 
     Returns:
         (available, reason) — True if GPU can accept work, else False with reason.
@@ -516,7 +542,7 @@ def check_gpu_available(gpu_index: int = 0, min_free_gb: float = 0.0) -> tuple[b
             [
                 "nvidia-smi",
                 f"--id={gpu_index}",
-                "--query-gpu=utilization.gpu,memory.free",
+                "--query-gpu=utilization.gpu,memory.free,power.draw,power.limit",
                 "--format=csv,nounits,noheader",
             ],
             capture_output=True,
@@ -525,11 +551,33 @@ def check_gpu_available(gpu_index: int = 0, min_free_gb: float = 0.0) -> tuple[b
         )
         if result.returncode == 0:
             parts = [p.strip() for p in result.stdout.strip().split(",")]
-            if len(parts) >= 2:
-                util_pct = int(parts[0])
+            if len(parts) >= 4:
+                raw_util = float(parts[0])
                 free_gb = float(parts[1]) / 1024
-                if util_pct > 50:
-                    return False, f"GPU {gpu_index} busy ({util_pct}% utilization)"
+
+                def parse_power(value: str) -> float | None:
+                    try:
+                        return float(value)
+                    except (ValueError, TypeError):
+                        return None
+
+                power_draw = parse_power(parts[2])
+                power_limit = parse_power(parts[3])
+
+                # Fallback to raw_util if power_limit return is bad
+                if power_draw is not None and power_limit is not None and power_limit > 0:
+                    # raw_util is insufficient
+                    #  Measures X% of time at least one kernel ran during last polling window
+
+                    # (power_draw / power_limit) multiplier to calculate effective usage
+                    #  This is more accurate than other methods like measuring clock speed.
+                    eff_util = raw_util * (power_draw / power_limit)
+                    eff_util = min(eff_util, 100.0)
+                else:
+                    eff_util = raw_util
+
+                if eff_util > 50:
+                    return False, f"GPU {gpu_index} busy ({eff_util:.0f}% utilization)"
                 if min_free_gb > 0 and free_gb < min_free_gb:
                     return False, f"GPU {gpu_index} low VRAM ({free_gb:.1f}GB free, need {min_free_gb:.1f}GB)"
                 return True, "ok"
@@ -546,7 +594,15 @@ def check_gpu_available(gpu_index: int = 0, min_free_gb: float = 0.0) -> tuple[b
     except Exception:
         logger.debug("Unexpected failure trying to check GPU usage", exc_info=True)
 
-    # Try AMD
+    return None
+
+
+def _check_amd_available(gpu_index: int, min_free_gb: float) -> tuple[bool, str] | None:
+    """Checks GPU utilization via ami-smi.
+
+    Returns:
+        (available, reason) — True if GPU can accept work, else False with reason.
+    """
     try:
         result = subprocess_run(
             ["amd-smi", "monitor", "--gpu-use", "--vram", "--json"],
@@ -565,26 +621,33 @@ def check_gpu_available(gpu_index: int = 0, min_free_gb: float = 0.0) -> tuple[b
     except (FileNotFoundError, TimeoutExpired, Exception):
         pass
 
-    # Try PyTorch
-    if torch.cuda.is_available():
-        try:
-            # Set the device to query
-            device = torch.device(f"cuda:{gpu_index}")
+    return None
 
-            # mem_get_info returns (free_bytes, total_bytes)
-            free_bytes, _ = torch.cuda.mem_get_info(device)
-            free_gb = free_bytes / (1024**3)
 
-            # No utility check so fallback relies on just vram usage
-            if min_free_gb > 0 and free_gb < min_free_gb:
-                return False, f"GPU {gpu_index} low VRAM (PyTorch: {free_gb:.1f}GB free)"
+def _check_torch_available(gpu_index: int, min_free_gb: float) -> tuple[bool, str] | None:
+    """Checks GPU utilization via torch.
 
-            return True, "ok"
-        # Catch all so we return default
-        except Exception:
-            pass
+    Returns:
+        (available, reason) — True if GPU can accept work, else False with reason.
+    """
+    try:
+        # Set the device to query
+        device = torch.device(f"cuda:{gpu_index}")
 
-    return True, "gpu monitoring unavailable"
+        # mem_get_info returns (free_bytes, total_bytes)
+        free_bytes, _ = torch.cuda.mem_get_info(device)
+        free_gb = free_bytes / (1024**3)
+
+        # No utility check so fallback relies on just vram usage
+        if min_free_gb > 0 and free_gb < min_free_gb:
+            return False, f"GPU {gpu_index} low VRAM (PyTorch: {free_gb:.1f}GB free)"
+
+        return True, "ok"
+    # Catch all so we return default
+    except Exception:
+        pass
+
+    return None
 
 
 def clear_device_cache(device: torch.device | str) -> None:
