@@ -535,6 +535,7 @@ def _check_nvidia_available(gpu_index: int, min_free_gb: float) -> tuple[bool, s
 
     Returns:
         (available, reason) — True if GPU can accept work, else False with reason.
+        | None — Unable to check gpu availability using NVIDIA method
     """
     # Try NVIDIA
     try:
@@ -555,6 +556,12 @@ def _check_nvidia_available(gpu_index: int, min_free_gb: float) -> tuple[bool, s
 
 
 def _query_nvidia_smi(gpu_index: int) -> str | None:
+    """Queries nvidia-smi for utilization.gpu, memory.free, power.draw, power.limit
+
+    Returns:
+        str — raw nvidia-smi output
+        | None — nvidia-smi error
+    """
     result = subprocess_run(
         [
             "nvidia-smi",
@@ -573,10 +580,11 @@ def _query_nvidia_smi(gpu_index: int) -> str | None:
 
 
 def _parse_nvidia_availability(stdout: str, gpu_index: int, min_free_gb: float) -> tuple[bool, str] | None:
-    """Parses nvidia-smi output provided by _check_nvidia_available
+    """Parses nvidia-smi output provided by _query_nvidia_smi
 
     Returns:
         (available, reason) — True if GPU can accept work, else False with reason.
+        | None — Bad nvidia-smi output
     """
     parts = [p.strip() for p in stdout.strip().split(",")]
     if len(parts) < 4:
@@ -619,10 +627,11 @@ def _parse_nvidia_availability(stdout: str, gpu_index: int, min_free_gb: float) 
 
 
 def _check_amd_available(gpu_index: int, min_free_gb: float) -> tuple[bool, str] | None:
-    """Checks GPU utilization via ami-smi.
+    """Checks GPU utilization via amd-smi.
 
     Returns:
         (available, reason) — True if GPU can accept work, else False with reason.
+        | None — Unable to check gpu availability using AMD method
     """
     try:
         result = subprocess_run(
@@ -650,6 +659,7 @@ def _check_torch_available(gpu_index: int, min_free_gb: float) -> tuple[bool, st
 
     Returns:
         (available, reason) — True if GPU can accept work, else False with reason.
+        | None — Unable to check gpu availability using torch method
     """
     try:
         # Set the device to query
