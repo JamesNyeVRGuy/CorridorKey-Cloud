@@ -380,9 +380,7 @@ class NodeAgent:
         elif job_type == "inference":
             # Inference writes at least one of FG/Matte/Comp/Processed. Consider
             # the run successful if any of these has content.
-            candidates = [
-                os.path.join(clip_dir, "Output", sub) for sub in ("Processed", "Matte", "FG", "Comp")
-            ]
+            candidates = [os.path.join(clip_dir, "Output", sub) for sub in ("Processed", "Matte", "FG", "Comp")]
             for d in candidates:
                 if os.path.isdir(d) and any(os.path.isfile(os.path.join(d, f)) for f in os.listdir(d)):
                     return

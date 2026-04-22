@@ -48,11 +48,7 @@ def write_node_env(
     and logs at error level on failure (CRKY-194).
     """
     contents = (
-        f"CK_MAIN_URL={url}\n"
-        f"CK_AUTH_TOKEN={token}\n"
-        f"CK_NODE_NAME={name}\n"
-        "CK_NODE_GPUS=auto\n"
-        "CK_NODE_PREWARM=true\n"
+        f"CK_MAIN_URL={url}\nCK_AUTH_TOKEN={token}\nCK_NODE_NAME={name}\nCK_NODE_GPUS=auto\nCK_NODE_PREWARM=true\n"
     )
     try:
         os.makedirs(config_dir, exist_ok=True)

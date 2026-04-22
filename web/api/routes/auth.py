@@ -96,11 +96,13 @@ def _verify_captcha(token: str, remote_ip: str | None = None) -> None:
     import urllib.request
 
     try:
-        body = json.dumps({
-            "secret": _TURNSTILE_SECRET,
-            "response": token,
-            **({"remoteip": remote_ip} if remote_ip else {}),
-        }).encode()
+        body = json.dumps(
+            {
+                "secret": _TURNSTILE_SECRET,
+                "response": token,
+                **({"remoteip": remote_ip} if remote_ip else {}),
+            }
+        ).encode()
         req = urllib.request.Request(
             "https://challenges.cloudflare.com/turnstile/v0/siteverify",
             data=body,
