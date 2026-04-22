@@ -33,3 +33,35 @@
 	# Compress responses
 	encode gzip zstd
 }
+
+# Dedicated file transfer hosts (uploads + previews/downloads).
+# Example: CKWEB_FILE_BASE=files.corridorkey.cloud
+{$CKWEB_FILE_BASE} {
+	handle_path /api/upload* {
+		reverse_proxy localhost:3000 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+	
+	handle_path /api/preview* {
+		reverse_proxy localhost:3000 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# Reject other paths on the files host
+	respond "Not Found" 404
+
+	# Security headers
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# Compress responses
+	encode gzip zstd
+}

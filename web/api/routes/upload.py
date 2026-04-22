@@ -30,8 +30,7 @@ router = APIRouter(prefix="/api/upload", tags=["upload"], dependencies=[Depends(
 
 # Max upload size in bytes. Default 10 GB. Set CK_MAX_UPLOAD_MB to override.
 _MAX_UPLOAD_BYTES = int(os.environ.get("CK_MAX_UPLOAD_MB", "10240").strip()) * 1024 * 1024
-_CHUNK_SIZE = 8 * 1024 * 1024
-
+_CHUNK_SIZE = int(os.environ.get("CK_CHUNK_SIZE_MB", "10").strip()) * 1024 * 1024
 
 async def _save_upload(file: UploadFile, dest: str) -> None:
     """Save an uploaded file to dest with size limit enforcement."""

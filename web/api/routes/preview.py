@@ -417,6 +417,7 @@ def download_pass(clip_name: str, pass_name: str, request: Request):
     # Build ZIP to a temp file FIRST (no download slot held during build)
     zip_path = os.path.join(_cache_dir, f"dl_{zip_name}")
     try:
+        #Possibly faster with ZIP_ZSTANDARD (python3.12+) if available, but not universally supported for extraction
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for fname in files:
                 fpath = os.path.join(target_dir, fname)

@@ -65,6 +65,7 @@ jobs:
           build-args: |
             BUILD_COMMIT=${{ github.sha }}
             BUILD_NUMBER=${{ steps.buildnum.outputs.ts }}
+            CKWEB_FILE_BASE=files.corridorkey.cloud
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
