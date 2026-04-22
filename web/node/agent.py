@@ -57,7 +57,16 @@ _EMBEDDED_VERSION = _load_embedded_version()
 
 
 def _get_local_version() -> str:
-    """Detect version: embedded (frozen) > git (dev) > unknown."""
+    """Detect version: embedded semver tag > embedded commit > git (dev) > unknown.
+
+    The release tag (e.g. node-v0.0.43) is the actionable version for users,
+    so it's preferred when present. Non-release frozen builds and source runs
+    fall back to a commit hash.
+    """
+    tag = _EMBEDDED_VERSION.get("CK_BUILD_TAG", "").strip()
+    if tag:
+        return tag.removeprefix("node-v")
+
     v = _EMBEDDED_VERSION.get("CK_BUILD_COMMIT")
     if v:
         return v[:12]
@@ -223,8 +232,8 @@ class NodeAgent:
             if not data.get("version_match", True):
                 server_v = data.get("server_version", "unknown")
                 logger.warning(
-                    f"Version mismatch — node: {payload['security']['agent_version']}, "
-                    f"server: {server_v}. Consider updating the node."
+                    f"Version mismatch: node {payload['security']['agent_version']}, "
+                    f"server {server_v}. Consider updating the node."
                 )
             return True
         except httpx.HTTPStatusError as e:

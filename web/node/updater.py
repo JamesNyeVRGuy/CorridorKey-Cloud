@@ -1,17 +1,17 @@
 """Auto-updater for the CorridorKey node agent standalone binary.
 
-Checks GitHub Releases API for new versions, downloads the update in the
-background, and applies it via a platform-specific helper script that
-replaces the running binary after exit.
+Checks the HuggingFace Hub repo that the release workflow publishes to
+(see .github/workflows/release-node.yml), downloads a newer node-v* build
+in the background, and applies it via a platform-specific helper script
+that replaces the running binary after exit.
 
-Only active in frozen (PyInstaller) builds — no-op when running from source.
+Only active in frozen (PyInstaller) builds: no-op when running from source.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import platform
 import shutil
 import sys
 import threading
@@ -19,8 +19,9 @@ import zipfile
 
 logger = logging.getLogger(__name__)
 
-# GitHub repo for release checks
-_GITHUB_REPO = "JamesNyeVRGuy/CorridorKey"
+# HuggingFace repo hosting the node binaries. The release workflow uploads
+# every build here under {tag}/... and mirrors the latest build to latest/.
+_HF_REPO = "JamesNyeVRGuy/corridorkey-node"
 _CHECK_INTERVAL = 3600  # 1 hour between checks
 
 
@@ -29,38 +30,50 @@ def is_frozen() -> bool:
     return getattr(sys, "frozen", False)
 
 
-def get_current_version() -> str:
-    """Get the current build commit (short) from env or embedded metadata.
+def _embedded_version() -> dict[str, str]:
+    """Return the embedded _version.env dict; empty on non-frozen/dev builds."""
+    try:
+        from .agent import _EMBEDDED_VERSION
+    except Exception:
+        return {}
+    return _EMBEDDED_VERSION or {}
 
-    Returned for display only. Update comparisons use the build number
-    (unix timestamp) via ``_current_build_number`` — commit hashes are
-    not ordered and must not be compared with ``>``.
-    """
+
+def _current_tag() -> str | None:
+    """Embedded release tag like 'node-v0.0.43', or None on dev/legacy builds."""
+    tag = os.environ.get("CK_BUILD_TAG", "").strip() or _embedded_version().get("CK_BUILD_TAG", "").strip()
+    return tag or None
+
+
+def _parse_node_version(tag: str) -> tuple[int, ...] | None:
+    """Parse 'node-v0.0.44' -> (0, 0, 44). Returns None on malformed input."""
+    stripped = tag.removeprefix("node-v")
+    try:
+        parts = tuple(int(p) for p in stripped.split("."))
+    except ValueError:
+        return None
+    return parts or None
+
+
+def get_current_version() -> str:
+    """Human-readable current version: semver ('0.0.43') when tagged, else commit."""
+    tag = _current_tag()
+    if tag:
+        return tag.removeprefix("node-v")
     return os.environ.get("CK_BUILD_COMMIT", "dev")
 
 
-def _current_build_number() -> int:
-    """Current build number (unix timestamp), 0 if unknown.
-
-    Prefers the environment variable set by Docker/release tooling, then
-    falls back to the embedded ``_version.env`` bundled next to the
-    frozen binary. Matches the resolution used by agent._get_local_build_number.
-    """
-    env_val = os.environ.get("CK_BUILD_NUMBER", "").strip()
-    if env_val:
-        try:
-            return int(env_val)
-        except ValueError:
-            pass
-    # Lazy import to avoid a hard dependency cycle at module load.
+def _gpu_variant() -> str | None:
+    """Return 'nvidia' or 'amd' based on the torch build shipped in this binary."""
     try:
-        from .agent import _get_local_build_number
+        import torch
     except Exception:
-        return 0
-    try:
-        return int(_get_local_build_number() or 0)
-    except Exception:
-        return 0
+        return None
+    if getattr(torch.version, "hip", None):
+        return "amd"
+    if getattr(torch.version, "cuda", None):
+        return "nvidia"
+    return None
 
 
 def get_install_dir() -> str:
@@ -78,78 +91,69 @@ def _staging_dir() -> str:
 
 
 def check_for_update() -> dict | None:
-    """Check GitHub Releases API for a newer node release.
+    """Poll HuggingFace for a newer node-v* build matching this binary's variant.
 
-    Returns release info dict if an update is available, None otherwise.
-
-    Version comparison uses the build number (unix timestamp) against the
-    release's ``published_at``. The ``node-v*`` tag is semver, but the
-    binary has no semver embedded — only a commit SHA and build timestamp
-    — so we compare timestamps. This also sidesteps the force-pushable
-    ``cloud`` tag: only ``node-v*`` releases are considered.
+    Returns an update_info dict {tag, version, download_url, size, name} if
+    a newer release exists, else None. Binaries built before CK_BUILD_TAG was
+    embedded in _version.env cannot be compared and are skipped: they must be
+    reinstalled manually once to pick up auto-update.
     """
-    from datetime import datetime
-
     import httpx
 
-    current_build = _current_build_number()
-    if current_build <= 0:
-        logger.debug("No build number available — skipping update check")
+    current_tag = _current_tag()
+    if not current_tag:
+        logger.debug("No CK_BUILD_TAG on this build, skipping update check")
+        return None
+    current_ver = _parse_node_version(current_tag)
+    if current_ver is None:
+        logger.debug("Unparseable current tag %r, skipping update check", current_tag)
         return None
 
+    if sys.platform != "win32":
+        logger.debug("Auto-update only implemented for Windows binaries")
+        return None
+
+    variant = _gpu_variant()
+    if not variant:
+        logger.debug("Could not determine GPU variant, skipping update check")
+        return None
+    asset_name = f"corridorkey-node-{variant}-win-x64.zip"
+
     try:
-        url = f"https://api.github.com/repos/{_GITHUB_REPO}/releases"
-        r = httpx.get(url, timeout=15, headers={"Accept": "application/vnd.github+json"})
+        url = f"https://huggingface.co/api/models/{_HF_REPO}/tree/main?recursive=true"
+        r = httpx.get(url, timeout=15)
         r.raise_for_status()
-        releases = r.json()
-
-        # Find the latest node release (tagged node-v*, newest first).
-        for release in releases:
-            tag = release.get("tag_name", "")
-            if not tag.startswith("node-v"):
-                continue
-            if release.get("draft") or release.get("prerelease"):
-                continue
-
-            published = release.get("published_at") or release.get("created_at")
-            if not published:
-                return None
-            try:
-                published_ts = int(datetime.fromisoformat(published.replace("Z", "+00:00")).timestamp())
-            except ValueError:
-                return None
-
-            if published_ts <= current_build:
-                return None  # latest release is not newer than our build
-
-            asset = _find_asset(release.get("assets", []))
-            if not asset:
-                logger.info("Update %s available but no asset matches this platform", tag)
-                return None
-            return {
-                "tag": tag,
-                "version": tag.removeprefix("node-"),
-                "download_url": asset["browser_download_url"],
-                "size": asset["size"],
-                "name": asset["name"],
-            }
-
+        tree = r.json()
     except Exception:
-        logger.debug("Update check failed", exc_info=True)
-    return None
+        logger.debug("HF tree listing failed", exc_info=True)
+        return None
 
+    # Pick the highest node-v* whose directory contains our variant's zip.
+    best: tuple[tuple[int, ...], str, int] | None = None  # (ver, tag, size)
+    for entry in tree:
+        if entry.get("type") != "file":
+            continue
+        path = entry.get("path", "")
+        tag, _, fname = path.partition("/")
+        if fname != asset_name or not tag.startswith("node-v"):
+            continue
+        ver = _parse_node_version(tag)
+        if ver is None or ver <= current_ver:
+            continue
+        if best is None or ver > best[0]:
+            best = (ver, tag, int(entry.get("size") or 0))
 
-def _find_asset(assets: list[dict]) -> dict | None:
-    """Find the matching release asset for this platform."""
-    system = platform.system().lower()
+    if best is None:
+        return None
 
-    for asset in assets:
-        name = asset.get("name", "").lower()
-        if system == "windows" and "win" in name and ("x64" in name or "amd64" in name):
-            return asset
-        if system == "linux" and "linux" in name and ("x64" in name or "amd64" in name):
-            return asset
-    return None
+    _, tag, size = best
+    return {
+        "tag": tag,
+        "version": tag.removeprefix("node-v"),
+        "download_url": f"https://huggingface.co/{_HF_REPO}/resolve/main/{tag}/{asset_name}",
+        "size": size,
+        "name": asset_name,
+    }
 
 
 def download_update(update_info: dict, on_progress=None) -> str | None:
@@ -197,7 +201,7 @@ def apply_update(archive_path: str) -> None:
     On Windows: writes a batch script that waits, copies files, relaunches.
     On Linux: writes a shell script that replaces the binary and relaunches.
 
-    This function does NOT return — it exits the current process.
+    This function does NOT return: it exits the current process.
     """
     install_dir = get_install_dir()
     staging = _staging_dir()
@@ -256,7 +260,7 @@ del "%~f0"
         startupinfo=si,
         close_fds=True,
     )
-    logger.info("Update script launched — exiting for update")
+    logger.info("Update script launched, exiting for update")
     os._exit(0)
 
 
@@ -279,7 +283,7 @@ exec "{os.path.join(install_dir, exe_name)}"
     import subprocess
 
     subprocess.Popen(["/bin/bash", script], start_new_session=True)
-    logger.info("Update script launched — exiting for update")
+    logger.info("Update script launched, exiting for update")
     os._exit(0)
 
 
@@ -296,7 +300,7 @@ class UpdateChecker:
     def start(self) -> None:
         """Start the background update checker."""
         if not is_frozen():
-            logger.debug("Not a frozen build — auto-updater disabled")
+            logger.debug("Not a frozen build, auto-updater disabled")
             return
 
         self._thread = threading.Thread(target=self._loop, daemon=True, name="updater")
