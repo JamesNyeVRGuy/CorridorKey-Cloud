@@ -22,6 +22,7 @@ services:
       - caddy-config:/config
     environment:
       - CK_DOMAIN=${CK_DOMAIN:?Set CK_DOMAIN in .env}
+      - CKWEB_FILE_BASE=${CKWEB_FILE_BASE:?Set CKWEB_FILE_BASE in .env}
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

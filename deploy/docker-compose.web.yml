@@ -9,11 +9,12 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction
+    command: redis-server --appendonly yes --appendfsync everysec --maxmemory-policy
+      noeviction
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -32,7 +33,7 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
+              capabilities: [ gpu ]
     environment:
       # Pin container time + node schedule TZ so schedules behave consistently
       # regardless of host system timezone (CRKY-198).
@@ -63,6 +64,7 @@ services:
       - CK_SMTP_FROM_EMAIL=${SMTP_ADMIN_EMAIL:-}
       - CK_SMTP_FROM_NAME=${SMTP_SENDER_NAME:-CorridorKey}
       - CK_SITE_URL=${SITE_URL:-https://corridorkey.cloud}
+      - CKWEB_FILE_BASE=${CKWEB_FILE_BASE:?Set CKWEB_FILE_BASE in .env}
     volumes:
       - ${CK_PROJECTS_DIR:-./Projects}:/app/Projects
       - ${CK_WEIGHTS_DIR:-./weights}/corridorkey:/app/CorridorKeyModule/checkpoints

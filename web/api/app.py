@@ -296,12 +296,12 @@ def create_app() -> FastAPI:
         )
 
     # Middleware execution order (Starlette LIFO: last added = outermost):
-    # Request → RateLimit → Auth → GZip → Route
+    # Request → RateLimit → Auth → GZip → CORS → APIVersion → Route
     # RateLimit must be outermost (added last) but needs user context from Auth.
     # Since Auth runs after RateLimit in LIFO, we can't get user in RateLimit.
     #
     # Solution: RateLimit added FIRST (innermost), Auth second, GZip last.
-    # Execution: GZip → Auth (injects user) → RateLimit (reads user) → Route
+    # Execution: GZip → CORS → APIVersion→ Auth (injects user) → RateLimit (reads user) → Route
     from fastapi.middleware.cors import CORSMiddleware
 
     from .rate_limit import RateLimitMiddleware
