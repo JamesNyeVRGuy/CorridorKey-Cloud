@@ -349,6 +349,42 @@ class TestDespill:
             result = cu.despill_torch(img_t, strength=1.0).numpy()
         np.testing.assert_allclose(result, img, atol=1e-6)
 
+    @pytest.mark.parametrize("strength", [0.0, 0.25, 0.5, 0.75, 1.0])
+    def test_in_place_matches_allocating_reference(self, strength):
+        """CRKY-208: the in-place despill must be bit-identical to the allocating version."""
+
+        def _despill_torch_reference(image: torch.Tensor, s: float) -> torch.Tensor:
+            if s <= 0.0:
+                return image
+            r, g, b = image[:, 0], image[:, 1], image[:, 2]
+            limit = (r + b) / 2.0
+            spill = torch.clamp(g - limit, min=0.0)
+            g_new = g - spill
+            r_new = r + spill * 0.5
+            b_new = b + spill * 0.5
+            despilled = torch.stack([r_new, g_new, b_new], dim=1)
+            if s < 1.0:
+                return image * (1.0 - s) + despilled * s
+            return despilled
+
+        rng = torch.Generator().manual_seed(42)
+        img = torch.rand(2, 3, 32, 48, generator=rng)
+
+        reference = _despill_torch_reference(img, strength)
+        actual = cu.despill_torch(img, strength)
+
+        torch.testing.assert_close(actual, reference, atol=1e-6, rtol=1e-6)
+
+    def test_does_not_mutate_input(self):
+        """Input tensor must stay untouched even though the implementation is in-place on a clone."""
+        rng = torch.Generator().manual_seed(7)
+        img = torch.rand(1, 3, 16, 16, generator=rng)
+        snapshot = img.clone()
+
+        cu.despill_torch(img, strength=1.0)
+
+        torch.testing.assert_close(img, snapshot, atol=0.0, rtol=0.0)
+
 
 # ---------------------------------------------------------------------------
 # clean_matte

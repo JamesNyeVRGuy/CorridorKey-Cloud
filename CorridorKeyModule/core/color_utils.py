@@ -250,19 +250,30 @@ def despill_opencv(
 
 
 def despill_torch(image: torch.Tensor, strength: float) -> torch.Tensor:
-    """GPU despill — keeps data on device."""
+    """GPU despill, keeps data on device.
+
+    image: BCHW layout [B, 3, H, W] float (0..1).
+    strength: 0.0 to 1.0 multiplier for the despill effect.
+
+    Clones the input once and runs all subsequent math in place on the
+    clone. Produces the same output as the allocating implementation but
+    drops five intermediate tensors on the hot path.
+
+    Ported from 99oblivius/CorridorKey-Engine color_utils.py.
+    """
     if strength <= 0.0:
         return image
-    r, g, b = image[:, 0], image[:, 1], image[:, 2]
-    limit = (r + b) / 2.0
-    spill = torch.clamp(g - limit, min=0.0)
-    g_new = g - spill
-    r_new = r + spill * 0.5
-    b_new = b + spill * 0.5
-    despilled = torch.stack([r_new, g_new, b_new], dim=1)
+    out = image.clone()
+    r, g, b = out[:, 0], out[:, 1], out[:, 2]  # views into `out`, not copies
+    limit = r.add(b).div_(2.0)  # r.add(b) allocates once; div_ runs in place on it
+    spill = (g - limit).clamp_(min=0.0)  # (g - limit) allocates once; clamp_ runs in place
+    g.sub_(spill)
+    spill.mul_(0.5)  # reuse spill buffer for the halved value
+    r.add_(spill)
+    b.add_(spill)
     if strength < 1.0:
-        return image * (1.0 - strength) + despilled * strength
-    return despilled
+        out.lerp_(image, 1.0 - strength)  # out = out * strength + image * (1 - strength)
+    return out
 
 
 def connected_components(mask: torch.Tensor, min_component_distance=1, max_iterations=100) -> torch.Tensor:
