@@ -268,11 +268,35 @@ def login_proxy(req: LoginRequest):
         except Exception:
             err_body = {}
         desc = (err_body.get("error_description") or err_body.get("msg") or "").lower()
+
+        # If email not confirmed then resend the OTP email. This is a common support issue and better UX
+        # than making users figure out they need to go check their email and click the link before logging in.
         if "email not confirmed" in desc:
-            raise HTTPException(
-                status_code=403,
-                detail="Please check your email and click the verification link before signing in.",
-            ) from e
+
+            otp_email_sent = False
+            try:
+                from ..email import send_approval_otp_email
+                otp_email_sent = send_approval_otp_email(req.email)
+            except Exception:
+                logger.exception("send_approval_otp_email: email send failed for %s", req.email)
+                # Supabase ratelimits otp requests, so inform the user instead of silently failing.
+                # TODO - Try and get time remaning on ratelimit from supabase on OTP and show user.
+                raise HTTPException(
+                    status_code=403,
+                    detail="Error sending verification email. Please wait a moment and try logging in again.",
+                ) from e
+
+            if otp_email_sent:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Please check your email and click the verification link before signing in.",
+                ) from e
+            else:
+                logger.error("Failed to send OTP email for unconfirmed login: %s", req.email)
+                raise HTTPException(
+                    status_code=403,
+                    detail="Error sending verification email. Please contact support.",
+                ) from e
         # Everything else (wrong password, unknown email, disabled user) collapses
         # to the same generic response so an attacker can't enumerate registered
         # emails via response differentiation.
