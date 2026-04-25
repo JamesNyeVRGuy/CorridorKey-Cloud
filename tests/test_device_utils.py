@@ -5,6 +5,7 @@ and clear_device_cache() using monkeypatch to mock hardware availability.
 No GPU required.
 """
 
+from subprocess import TimeoutExpired
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,6 +15,8 @@ from device_utils import (
     DEVICE_ENV_VAR,
     MIN_CUDA_COMPUTE_CAPABILITY,
     GPUInfo,
+    _parse_nvidia_availability,
+    _query_nvidia_smi,
     check_gpu_torch_compat,
     clear_device_cache,
     detect_best_device,
@@ -282,3 +285,90 @@ class TestCheckGpuTorchCompat:
         # The fallback constant should match the most common torch wheel floor.
         # Update deliberately if torch drops further.
         assert MIN_CUDA_COMPUTE_CAPABILITY == (7, 0)
+
+
+# ---------------------------------------------------------------------------
+# _parse_nvidia_availability
+# ---------------------------------------------------------------------------
+
+
+class TestNvidiaSmiParsing:
+    """Check that NVIDIA smi output is parsed correctly"""
+
+    def test_parse_nvidia_availability_success(self):
+        # Input: util, free, draw, limit
+        # Expected: eff_util = 80 * (100/200) = 40%
+        stdout = "80, 8192, 100, 200"
+        available, reason = _parse_nvidia_availability(stdout, 0, 0)
+        assert available is True
+        assert reason == "ok"
+
+    def test_parse_nvidia_availability_gpu_util_busy(self):
+        # Input: util, free, draw, limit
+        # Expected: eff_util = 60 * (200/200) = 60% (should be busy)
+        stdout = "60, 8192, 200, 200"
+        available, reason = _parse_nvidia_availability(stdout, 0, 0)
+        assert available is False
+        assert "busy" in reason
+
+    def test_parse_nvidia_availability_low_vram_busy(self):
+        stdout = "10, 512, 100, 200"  # 512 MB free
+        available, reason = _parse_nvidia_availability(stdout, 0, 1.0)  # Need 1GB
+        assert available is False
+        assert "low VRAM" in reason
+
+    def test_parse_nvidia_availability_invalid_power_fallback(self):
+        # power_draw/limit are "invalid" strings
+        # eff_util = raw_util = 60 (should be busy)
+        stdout = "60, 8192, [N/A], [N/A]"
+        available, reason = _parse_nvidia_availability(stdout, 0, 0)
+        assert available is False
+        assert "busy" in reason
+
+    def test_parse_nvidia_availability_malformed_input_short(self):
+        stdout = "10, 8192"
+        assert _parse_nvidia_availability(stdout, 0, 0) is None
+
+    def test_parse_nvidia_availability_malformed_input_invalid_fields(self):
+        stdout = "[N/A], [N/A], [N/A], [N/A]"
+        assert _parse_nvidia_availability(stdout, 0, 0) is None
+
+    def test_parse_nvidia_availability_calculation(self):
+        # Input: util=100, free=8192, draw=3, limit=4
+        # Expected: eff_util = 100 * (3/4) = 75%
+        stdout = "100, 8192, 3, 4"
+        available, reason = _parse_nvidia_availability(stdout, 0, 0)
+        assert available is False
+        assert "(75" in reason
+
+
+# ---------------------------------------------------------------------------
+# _query_nvidia_smi
+# ---------------------------------------------------------------------------
+
+
+class TestNvidiaSmiQuery:
+    """Try to check that NVIDIA smi query is correct"""
+
+    @pytest.mark.gpu
+    def test_query_nvidia_smi(self):
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+
+        try:
+            query = _query_nvidia_smi(0)
+        except (FileNotFoundError, TimeoutExpired) as e:
+            pytest.skip(f"Could not succesfully query nvidia-smi\n{e}")
+
+        try:
+            parsed_query = _parse_nvidia_availability(query, 0, 0)
+
+            assert parsed_query is None or isinstance(parsed_query, tuple), "Parsed result should be a tuple or None"
+
+            if parsed_query is not None:
+                assert len(parsed_query) == 2, "Tuple must contain exactly 2 elements"
+                assert isinstance(parsed_query[0], bool), "First element must be a boolean"
+                assert isinstance(parsed_query[1], str), "Second element must be a string"
+
+        except Exception as e:
+            pytest.fail(f"Encounted unexpected exception querying nvidia-smi\n{e}")
