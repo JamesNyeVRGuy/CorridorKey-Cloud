@@ -4,20 +4,25 @@
 Build (from repo root):
     pyinstaller web/node/corridorkey-node.spec
 
-Output: dist/corridorkey-node/ (--onedir, ~500-700MB with CPU torch)
+Output: dist/corridorkey-node/ (--onedir)
 
-The binary ships with CPU-only torch. On first launch the node detects
-the GPU vendor and downloads the appropriate CUDA or ROCm torch addon.
-Model weights are also downloaded on first launch.
+Bundle contents:
+- NVIDIA build: bundled with CUDA torch (release-node.yml installs cu128 wheel).
+- AMD build:    bundled with ROCm torch + the _rocm_sdk_core and
+                _rocm_sdk_libraries_custom native packages, preserving
+                their original directory layout so rocm_sdk's __file__-
+                relative DLL lookup works in the frozen bundle.
+                corridorkey_node_main.py registers the bin/ directories
+                with os.add_dll_directory() at startup so Windows can
+                resolve HIP DLLs.
+
+Model weights are downloaded on first launch by weight_sync.py.
 """
 
-import glob as _glob
-import importlib
-import os
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules, copy_metadata
+from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
 
 block_cipher = None
 
@@ -70,35 +75,36 @@ _metadata = (
     + copy_metadata("imageio")
 )
 
-# Collect HIP/ROCm DLLs that PyInstaller's binary analysis misses.
-# The DLLs live in _rocm_sdk_core/bin/ and _rocm_sdk_libraries_custom/bin/
-# (note the underscore prefix — the non-prefixed packages are just Python wrappers).
-# We copy them into torch/lib/ so they're on the DLL search path at runtime.
-_extra_binaries = []
-
-# Search rocm SDK native packages for DLLs.
-# These are the packages that contain the actual HIP/ROCm runtime libraries.
-for pkg_name in ["_rocm_sdk_core", "_rocm_sdk_libraries_custom"]:
+# Collect the rocm_sdk native packages (_rocm_sdk_core, _rocm_sdk_libraries_custom)
+# preserving their original directory layout. rocm_sdk.find_libraries() resolves
+# DLL paths via __file__-relative lookups against these packages, so the bundle
+# must keep the package tree intact (bin/, lib/, kernel device libs, bitcode, etc.)
+# rather than flattening everything into torch/lib/. Windows DLL discovery is
+# bootstrapped at runtime by corridorkey_node_main.py via os.add_dll_directory().
+_rocm_extras_datas = []
+_rocm_extras_binaries = []
+_rocm_extras_hidden = []
+for _pkg_name in ["_rocm_sdk_core", "_rocm_sdk_libraries_custom"]:
     try:
-        pkg = importlib.import_module(pkg_name)
-        pkg_dir = os.path.dirname(pkg.__file__)
-        for f in _glob.glob(os.path.join(pkg_dir, "**", "*.dll"), recursive=True):
-            if "clang_rt.asan" not in os.path.basename(f):
-                _extra_binaries.append((f, "torch/lib"))
-        for f in _glob.glob(os.path.join(pkg_dir, "**", "*.so"), recursive=True):
-            _extra_binaries.append((f, "torch/lib"))
-    except ImportError:
+        _pkg_datas, _pkg_binaries, _pkg_hidden = collect_all(_pkg_name)
+        _rocm_extras_datas += _pkg_datas
+        _rocm_extras_binaries += _pkg_binaries
+        _rocm_extras_hidden += _pkg_hidden
+    except Exception:
         pass
 
-if _extra_binaries:
-    print(f"[corridorkey-node.spec] Collected {len(_extra_binaries)} extra HIP/ROCm binaries")
+if _rocm_extras_binaries or _rocm_extras_datas:
+    print(
+        f"[corridorkey-node.spec] Collected ROCm SDK packages: "
+        f"{len(_rocm_extras_binaries)} binaries, {len(_rocm_extras_datas)} data files"
+    )
 else:
-    print("[corridorkey-node.spec] No ROCm packages found (NVIDIA or CPU build)")
+    print("[corridorkey-node.spec] No ROCm SDK packages found (NVIDIA or CPU build)")
 
 a = Analysis(
     [str(ROOT / "web" / "node" / "corridorkey_node_main.py")],
     pathex=[str(ROOT)],
-    binaries=_extra_binaries,
+    binaries=_rocm_extras_binaries,
     datas=[
         # App icon for tray
         (str(ROOT / "web" / "node" / "icon.png"), "web/node/"),
@@ -111,8 +117,10 @@ a = Analysis(
         if (ROOT / "web" / "node" / "_version.env").exists()
         else []
     )
-    + _metadata,
+    + _metadata
+    + _rocm_extras_datas,
     hiddenimports=_hidden
+    + _rocm_extras_hidden
     + [
         # Node agent modules (relative imports not always detected)
         "web.node",
@@ -175,13 +183,14 @@ a = Analysis(
         # pystray backends (platform-specific, detected at runtime)
         *(["pystray._win32"] if sys.platform == "win32" else []),
         *(["pystray._appindicator", "pystray._xorg"] if sys.platform == "linux" else []),
-        # ROCm SDK (runtime hook patches find_libraries, needs _dist_info for DLL patterns)
+        # ROCm SDK Python wrappers. The native packages (_rocm_sdk_core,
+        # _rocm_sdk_libraries_custom) are collected via collect_all above.
         "rocm_sdk",
         "rocm_sdk._dist_info",
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[str(ROOT / "web" / "node" / "pyi_rth_rocm.py")],
+    runtime_hooks=[],
     excludes=[
         # Web server (not needed for node agent)
         "fastapi",

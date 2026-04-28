@@ -192,22 +192,42 @@ volumes:
 				</button>
 				<button class="gpu-option" class:selected={gpuVendor === 'amd'} onclick={() => gpuVendor = 'amd'}>
 					<span class="gpu-brand">AMD</span>
-					<span class="gpu-detail mono">RX 7800 XT+ (ROCm, Linux only)</span>
+					<span class="gpu-detail mono">RX 7800 XT+ (ROCm, Windows .exe or Linux Docker)</span>
 				</button>
 			</div>
 
-			<h3 class="subsection-title mono">STANDALONE BINARY (Windows & Linux)</h3>
+			<h3 class="subsection-title mono">STANDALONE BINARY (Windows)</h3>
 			<div class="download-row">
-				<a href="https://huggingface.co/JamesNyeVRGuy/corridorkey-node/resolve/main/latest/corridorkey-node-nvidia-setup.exe" target="_blank" rel="noopener" class="download-btn mono">
+				<a
+					href={gpuVendor === 'nvidia'
+						? 'https://huggingface.co/JamesNyeVRGuy/corridorkey-node/resolve/main/latest/corridorkey-node-nvidia-setup.exe'
+						: 'https://huggingface.co/JamesNyeVRGuy/corridorkey-node/resolve/main/latest/corridorkey-node-amd-setup.exe'}
+					target="_blank"
+					rel="noopener"
+					class="download-btn mono"
+				>
 					<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1v9M4 7l4 4 4-4M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-					NVIDIA
+					{gpuVendor === 'nvidia' ? 'NVIDIA' : 'AMD'} INSTALLER (.exe)
 				</a>
-				<span class="download-btn download-disabled mono" title="AMD standalone binary is in development">
-					<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-					AMD <span class="wip-label">COMING SOON</span>
-				</span>
+				<a
+					href={gpuVendor === 'nvidia'
+						? 'https://huggingface.co/JamesNyeVRGuy/corridorkey-node/resolve/main/latest/corridorkey-node-nvidia-win-x64.zip'
+						: 'https://huggingface.co/JamesNyeVRGuy/corridorkey-node/resolve/main/latest/corridorkey-node-amd-win-x64.zip'}
+					target="_blank"
+					rel="noopener"
+					class="download-btn download-secondary mono"
+				>
+					Portable .zip
+				</a>
 			</div>
-			<p class="step-hint mono">Or continue below for Docker setup (recommended for servers)</p>
+			<p class="step-hint mono">
+				{#if gpuVendor === 'amd'}
+					AMD binary ships with the HIP runtime bundled — no separate ROCm install required.
+					Linux AMD users should use Docker (below).
+				{:else}
+					Linux NVIDIA users should use Docker (below) for easier GPU passthrough.
+				{/if}
+			</p>
 			<button class="btn-primary mono" onclick={() => step = 2}>Next: Generate Token &rarr;</button>
 
 		{:else if step === 2}
@@ -274,7 +294,8 @@ volumes:
 			</div>
 
 			<!-- CRKY-193: distro-specific setup notes for users whose Docker install
-			     doesn't come with the NVIDIA container runtime pre-configured. -->
+			     doesn't come with the GPU runtime pre-configured. -->
+			{#if gpuVendor === 'nvidia'}
 			<details class="distro-notes">
 				<summary class="distro-summary mono">Getting "could not select device driver 'nvidia'" or similar?</summary>
 				<div class="distro-body">
@@ -321,6 +342,52 @@ sudo systemctl restart docker</pre>
 					</p>
 				</div>
 			</details>
+			{:else}
+			<details class="distro-notes">
+				<summary class="distro-summary mono">Getting "permission denied: /dev/kfd" or no GPU detected?</summary>
+				<div class="distro-body">
+					<p class="distro-intro">
+						AMD GPUs need ROCm drivers on the host (the container does not ship them) and
+						the user running Docker must be in the <code class="mono">video</code> and
+						<code class="mono">render</code> groups so the container can access
+						<code class="mono">/dev/kfd</code> and <code class="mono">/dev/dri</code>.
+					</p>
+
+					<h4 class="distro-title mono">Ubuntu 22.04 / 24.04</h4>
+					<pre class="run-cmd mono">sudo apt-get update
+sudo apt-get install -y "linux-headers-$(uname -r)" "linux-modules-extra-$(uname -r)"
+wget https://repo.radeon.com/amdgpu-install/6.3/ubuntu/jammy/amdgpu-install_6.3.60300-1_all.deb
+sudo apt-get install -y ./amdgpu-install_6.3.60300-1_all.deb
+sudo amdgpu-install --usecase=dkms,rocm
+sudo usermod -aG video,render $USER
+# Log out and back in for group membership to apply, then verify:
+rocminfo | head</pre>
+
+					<h4 class="distro-title mono">Arch Linux / Manjaro</h4>
+					<pre class="run-cmd mono">sudo pacman -S rocm-hip-runtime rocm-hip-libraries rocm-smi-lib
+sudo usermod -aG video,render $USER
+# Log out and back in, then verify:
+rocminfo | head</pre>
+
+					<h4 class="distro-title mono">Fedora / RHEL</h4>
+					<pre class="run-cmd mono">sudo dnf install -y rocm-hip rocm-runtime rocm-smi
+sudo usermod -aG video,render $USER
+# Log out and back in, then verify:
+rocminfo | head</pre>
+
+					<h4 class="distro-title mono">Verify it works</h4>
+					<pre class="run-cmd mono">docker run --rm --device=/dev/kfd --device=/dev/dri --group-add video \
+  rocm/dev-ubuntu-22.04 rocminfo</pre>
+					<p class="distro-note">
+						If that prints your GPU agents, the runtime is wired up and the CorridorKey
+						AMD node will work. If you see "permission denied" on <code class="mono">/dev/kfd</code>,
+						you forgot to log out / back in after <code class="mono">usermod</code>.
+						Windows AMD users should use the standalone <code class="mono">.exe</code> above
+						(HIP runtime is bundled).
+					</p>
+				</div>
+			</details>
+			{/if}
 		{/if}
 	</div>
 
@@ -424,14 +491,11 @@ sudo systemctl restart docker</pre>
 		border-radius: var(--radius-sm); transition: all 0.15s;
 	}
 	.download-btn:hover { background: #fff; }
-	.download-disabled {
-		background: var(--surface-2); color: var(--text-tertiary); opacity: 0.6;
-		cursor: not-allowed; pointer-events: none;
+	.download-secondary {
+		background: var(--surface-3); color: var(--text-secondary);
+		border: 1px solid var(--border);
 	}
-	.wip-label {
-		font-size: 8px; padding: 1px 4px; border-radius: 3px;
-		background: rgba(255, 82, 82, 0.15); color: var(--state-error); margin-left: 4px;
-	}
+	.download-secondary:hover { background: var(--surface-2); color: var(--text-primary); }
 
 	/* Token form */
 	.token-form { display: flex; flex-direction: column; gap: var(--sp-3); }

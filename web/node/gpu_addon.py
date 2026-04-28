@@ -118,6 +118,31 @@ def is_addon_installed() -> bool:
     return os.path.isfile(_MARKER_FILE)
 
 
+def _bundled_torch_vendor() -> str | None:
+    """Return 'nvidia' or 'amd' if the bundled torch already has GPU support.
+
+    The Windows release builds (release-node.yml) ship with vendor-specific
+    torch baked into the bundle: CUDA torch for the NVIDIA artifact, ROCm
+    torch for the AMD artifact. In that case the addon download is redundant
+    and re-introduces problems (e.g. caffe2_nvrtc.dll on AMD) that the build
+    pipeline has already stripped.
+    """
+    try:
+        import torch
+    except ImportError:
+        return None
+    try:
+        if not torch.cuda.is_available():
+            return None
+    except Exception:
+        return None
+    if getattr(torch.version, "hip", None):
+        return "amd"
+    if getattr(torch.version, "cuda", None):
+        return "nvidia"
+    return None
+
+
 def _get_pip_executable() -> str:
     """Get the pip executable path."""
     # In frozen builds, use the system pip
@@ -144,10 +169,18 @@ def install_addon(vendor: str, on_progress=None) -> bool:
         packages = ["torch==2.8.0", "torchvision==0.23.0"]
         label = "CUDA"
     elif vendor == "amd" and sys.platform == "win32":
-        # AMD Windows ROCm wheels are hosted at repo.radeon.com, not pytorch.org
-        label = "ROCm (Windows)"
-        logger.info("AMD Windows detected — downloading ROCm torch from repo.radeon.com")
-        return _install_amd_windows(on_progress)
+        # AMD Windows release builds bundle ROCm torch + the _rocm_sdk_core /
+        # _rocm_sdk_libraries_custom native packages directly in the .exe
+        # (see release-node.yml + corridorkey-node.spec). The bundled-torch
+        # short-circuit in ensure_gpu_addon() should have caught this case;
+        # if we get here the bundle is missing GPU torch and there's nothing
+        # we can sensibly download to fix it (HIP runtime is far more than
+        # just a torch wheel), so fall back to CPU.
+        logger.warning(
+            "AMD Windows GPU detected but bundled ROCm torch is missing. "
+            "Reinstall the AMD node binary; running in CPU mode."
+        )
+        return False
     elif vendor == "amd":
         index_url = "https://download.pytorch.org/whl/rocm6.3"
         packages = ["torch==2.8.0", "torchvision==0.23.0"]
@@ -226,84 +259,6 @@ def install_addon(vendor: str, on_progress=None) -> bool:
         return False
     except Exception:
         logger.error("GPU addon install error", exc_info=True)
-        return False
-
-
-# AMD Windows ROCm wheel URLs (from repo.radeon.com)
-# The torch wheel depends on rocm==7.2.0.dev0 which pip resolves automatically.
-_AMD_WIN_WHEELS = [
-    "https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torch-2.9.1+rocmsdk20260116-cp312-cp312-win_amd64.whl",
-    "https://repo.radeon.com/rocm/windows/rocm-rel-7.2/torchvision-0.24.1+rocmsdk20260116-cp312-cp312-win_amd64.whl",
-]
-
-
-def _install_amd_windows(on_progress=None) -> bool:
-    """Install AMD ROCm torch on Windows from repo.radeon.com.
-
-    Downloads .whl files directly via httpx and extracts them (wheels are
-    zip files). No pip or system Python required — works in frozen builds.
-    """
-    import zipfile
-
-    import httpx
-
-    os.makedirs(_ADDON_DIR, exist_ok=True)
-
-    msg = "Downloading AMD ROCm GPU acceleration (~800MB, one-time download)..."
-    logger.info(msg)
-    if on_progress:
-        on_progress(msg)
-
-    try:
-        for url in _AMD_WIN_WHEELS:
-            name = url.rsplit("/", 1)[-1]
-            dest = os.path.join(_ADDON_DIR, name)
-
-            logger.info("Downloading %s...", name)
-            if on_progress:
-                on_progress(f"Downloading {name.split('-')[0]}...")
-
-            with httpx.stream("GET", url, timeout=300, follow_redirects=True) as r:
-                if r.status_code != 200:
-                    logger.error("Failed to download %s: HTTP %d", url, r.status_code)
-                    return False
-                total = int(r.headers.get("content-length", 0))
-                downloaded = 0
-                with open(dest, "wb") as f:
-                    for chunk in r.iter_bytes(chunk_size=1024 * 1024):
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if total > 0:
-                            pct = int(downloaded / total * 100)
-                            if pct % 10 == 0:
-                                logger.info(
-                                    "  %s: %dMB / %dMB (%d%%)",
-                                    name.split("-")[0],
-                                    downloaded // (1024 * 1024),
-                                    total // (1024 * 1024),
-                                    pct,
-                                )
-
-            # Extract wheel (it's a zip file) into the addon directory
-            logger.info("Extracting %s...", name)
-            with zipfile.ZipFile(dest, "r") as z:
-                z.extractall(_ADDON_DIR)
-            os.remove(dest)  # clean up the .whl file
-
-        # Write marker
-        with open(_MARKER_FILE, "w") as f:
-            f.write("amd\n")
-
-        msg = "AMD ROCm GPU acceleration installed successfully!"
-        logger.info(msg)
-        if on_progress:
-            on_progress(msg)
-        return True
-
-    except Exception:
-        logger.error("AMD ROCm install error", exc_info=True)
-        if on_progress:
-            on_progress("AMD ROCm install failed. Running in CPU mode.")
         return False
 
 
@@ -393,6 +348,20 @@ def ensure_gpu_addon() -> str | None:
             return vendor
         except Exception:
             pass
+
+    # Bundled torch already GPU-capable? Release builds ship vendor-specific
+    # torch (CUDA for nvidia artifact, ROCm for amd artifact), so the addon
+    # download is redundant. Mark installed so future launches skip detection.
+    bundled = _bundled_torch_vendor()
+    if bundled is not None:
+        logger.info("Bundled torch already supports %s GPUs — skipping addon download", bundled)
+        try:
+            os.makedirs(_ADDON_DIR, exist_ok=True)
+            with open(_MARKER_FILE, "w") as f:
+                f.write(f"{bundled}\n")
+        except OSError:
+            logger.debug("Could not write addon marker (non-fatal)", exc_info=True)
+        return bundled
 
     # Detect GPU
     vendor = detect_gpu_vendor()

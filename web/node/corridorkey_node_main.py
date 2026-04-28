@@ -37,6 +37,23 @@ if __name__ == "__main__":
     if sys.stderr is None:
         sys.stderr = open(os.devnull, "w")
 
+    # Windows: register the bundled HIP runtime directories with the OS DLL
+    # loader before any torch import. Python 3.8+ on Windows isolates DLL
+    # search to the directories registered via os.add_dll_directory(); PATH
+    # is no longer enough for non-system DLLs. Without this, torch's HIP
+    # dependency chain (amdhip64*.dll, rocblas, MIOpen, etc.) fails to load
+    # on AMD-only machines that don't have AMD's HIP SDK installed.
+    if sys.platform == "win32" and getattr(sys, "frozen", False):
+        _meipass = getattr(sys, "_MEIPASS", None)
+        if _meipass:
+            for _sub in ("_rocm_sdk_core", "_rocm_sdk_libraries_custom"):
+                _bin = os.path.join(_meipass, _sub, "bin")
+                if os.path.isdir(_bin):
+                    try:
+                        os.add_dll_directory(_bin)
+                    except (OSError, AttributeError):
+                        pass
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
