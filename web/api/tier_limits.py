@@ -27,11 +27,11 @@ TIER_LIMITS = {
         "max_duration": 0,
     },
     "member": {
-        "max_frames": 500,
+        "max_frames": 1000,
         "max_concurrent": 3,
-        "max_resolution": 1280,
-        "max_fps": 60,
-        "max_duration": 30,
+        "max_resolution": 1920,
+        "max_fps": 30,
+        "max_duration": 60,
     },
     "contributor": {
         "max_frames": 2000,
