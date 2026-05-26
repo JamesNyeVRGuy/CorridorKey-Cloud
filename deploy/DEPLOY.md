@@ -8,9 +8,8 @@ cd deploy
 # 1. Create your .env from the example
 cp .env.example .env
 
-# 2. Generate secrets and paste them into .env
-openssl rand -hex 32   # → POSTGRES_PASSWORD
-openssl rand -hex 32   # → JWT_SECRET, CK_JWT_SECRET, GOTRUE_JWT_SECRET (all same value)
+# 2. Generate secrets (omit --update-env to preview yes before updating)
+sh scripts/generate-keys.sh --update-env
 
 # 3. Set CK_AUTH_ENABLED=true in .env
 
@@ -34,25 +33,25 @@ Everything lives in a single `.env` file. Key rules:
 
 ### Required Variables (for auth mode)
 
-| Variable | Description |
-|----------|-------------|
-| `POSTGRES_PASSWORD` | Database password (all Supabase services use this) |
-| `JWT_SECRET` | JWT signing secret (shared between GoTrue and CK) |
-| `CK_JWT_SECRET` | Same as JWT_SECRET (CK reads this name) |
-| `CK_AUTH_ENABLED` | `true` to enable login/auth |
-| `CK_GOTRUE_INTERNAL_URL` | `http://supabase-auth:9999` (Docker internal) |
-| `CK_DATABASE_URL` | `postgresql://supabase_admin:<pw>@supabase-db:5432/corridorkey` |
-| `CK_MIGRATION_URL` | `postgresql://supabase_admin:<pw>@supabase-db:5432/corridorkey` |
-| `SERVICE_ROLE_KEY` | Supabase admin API key (for create-admin.sh) |
+| Variable                 | Description                                                     |
+| ------------------------ | --------------------------------------------------------------- |
+| `POSTGRES_PASSWORD`      | Database password (all Supabase services use this)              |
+| `JWT_SECRET`             | JWT signing secret (shared between GoTrue and CK)               |
+| `CK_JWT_SECRET`          | Same as JWT_SECRET (CK reads this name)                         |
+| `CK_AUTH_ENABLED`        | `true` to enable login/auth                                     |
+| `CK_GOTRUE_INTERNAL_URL` | `http://supabase-auth:9999` (Docker internal)                   |
+| `CK_DATABASE_URL`        | `postgresql://supabase_admin:<pw>@supabase-db:5432/corridorkey` |
+| `CK_MIGRATION_URL`       | `postgresql://supabase_admin:<pw>@supabase-db:5432/corridorkey` |
+| `SERVICE_ROLE_KEY`       | Supabase admin API key (for create-admin.sh)                    |
 
 ### Optional Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CK_METRICS_ENABLED` | `false` | Enable Prometheus /metrics endpoint |
-| `CK_LOG_FORMAT` | `text` | `json` for Loki/structured logging |
-| `CK_DOCS_PUBLIC` | auto | `true`/`false` to override API docs access |
-| `CK_STORAGE_BACKEND` | `local` | `s3` for S3-compatible storage |
+| Variable             | Default | Description                                |
+| -------------------- | ------- | ------------------------------------------ |
+| `CK_METRICS_ENABLED` | `false` | Enable Prometheus /metrics endpoint        |
+| `CK_LOG_FORMAT`      | `text`  | `json` for Loki/structured logging         |
+| `CK_DOCS_PUBLIC`     | auto    | `true`/`false` to override API docs access |
+| `CK_STORAGE_BACKEND` | `local` | `s3` for S3-compatible storage             |
 
 ## Architecture
 
@@ -78,17 +77,18 @@ Everything lives in a single `.env` file. Key rules:
 
 ## Docker Compose Files
 
-| File | Purpose |
-|------|---------|
-| `docker-compose.dev.yml` | Full stack: CK + Supabase (builds from source) |
-| `docker-compose.web.yml` | CK web server only (uses pre-built image) |
-| `docker-compose.node.yml` | Render farm node agent |
-| `docker-compose.node-hardened.yml` | Hardened node (read-only, dropped caps) |
-| `docker-compose.monitoring.yml` | Prometheus + Grafana + Loki |
-| `docker-compose.caddy.yml` | TLS/HTTPS via Caddy |
-| `docker-compose.supabase.yml` | Supabase stack only (no CK) |
+| File                               | Purpose                                        |
+| ---------------------------------- | ---------------------------------------------- |
+| `docker-compose.dev.yml`           | Full stack: CK + Supabase (builds from source) |
+| `docker-compose.web.yml`           | CK web server only (uses pre-built image)      |
+| `docker-compose.node.yml`          | Render farm node agent                         |
+| `docker-compose.node-hardened.yml` | Hardened node (read-only, dropped caps)        |
+| `docker-compose.monitoring.yml`    | Prometheus + Grafana + Loki                    |
+| `docker-compose.caddy.yml`         | TLS/HTTPS via Caddy                            |
+| `docker-compose.supabase.yml`      | Supabase stack only (no CK)                    |
 
 Compose files are **composable**:
+
 ```bash
 # Dev + monitoring
 docker compose -f docker-compose.dev.yml -f docker-compose.monitoring.yml --env-file .env up -d
@@ -115,6 +115,7 @@ You need ANON_KEY and SERVICE_ROLE_KEY. Generate them using the JWT_SECRET:
 ### 2. Create Admin User
 
 After the stack is up:
+
 ```bash
 ./create-admin.sh
 ```
@@ -248,9 +249,9 @@ file at parse time. `env_file:` inside a service loads variables
 services:
   corridorkey-web:
     env_file:
-      - .env                    # loads ALL vars into container
+      - .env # loads ALL vars into container
     environment:
-      CK_CLIPS_DIR: /app/Projects  # overrides/additions
+      CK_CLIPS_DIR: /app/Projects # overrides/additions
 ```
 
 #### 2. Use mapping format for `environment:`
@@ -286,6 +287,7 @@ image: ghcr.io/jamesnyevrguy/corridorkey-web:cloud
 ```
 
 Build and push the image separately:
+
 ```bash
 docker build -t ghcr.io/jamesnyevrguy/corridorkey-web:cloud -f web/Dockerfile.web .
 docker push ghcr.io/jamesnyevrguy/corridorkey-web:cloud
@@ -306,7 +308,7 @@ init scripts to fail or data corruption.
 ```yaml
 volumes:
   supabase-db-data:
-    driver: local   # local disk, NOT NFS
+    driver: local # local disk, NOT NFS
 ```
 
 NFS is fine for project files (`CK_PROJECTS_DIR`) and model weights.
@@ -345,6 +347,7 @@ docker exec $(docker ps -q -f name=supabase-db) \
 ```
 
 Then restart GoTrue:
+
 ```bash
 docker service update --force corridorkey_supabase-auth
 ```
@@ -442,29 +445,31 @@ docker compose -f docker-compose.dev.yml -f docker-compose.monitoring.yml --env-
 ```
 
 Set `CK_METRICS_ENABLED=true` in `.env`. Access:
+
 - Grafana: `http://localhost:3001` (admin/admin — change in `.env`)
 - Prometheus: `http://localhost:9090`
 
 ### With an external Prometheus
 
 Add to your existing `prometheus.yml`:
+
 ```yaml
 - job_name: corridorkey
   metrics_path: /metrics
   scrape_interval: 15s
   static_configs:
-    - targets: ['YOUR_CK_IP:3000']
+    - targets: ["YOUR_CK_IP:3000"]
 ```
 
 Import dashboards from `deploy/monitoring/grafana/dashboards/` into your Grafana.
 
 ## Common Issues
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| 404 on `/login` | `CK_AUTH_ENABLED` not reaching container | Check for CRLF line endings in `.env`. Run `dos2unix .env` |
-| `auth_enabled: false` but env is set | Trailing `\r` in env value | Same: `dos2unix .env` |
-| GoTrue: `password authentication failed` | DB volume has stale data | Nuke volume and redeploy |
-| GoTrue: `role does not exist` | Not using `supabase/postgres` image | Must use `supabase/postgres:15.6.1.143`, not `postgres:15` |
-| `Skipping initialization` | Volume already exists | `docker volume rm <volume>` |
-| `no such image` after prune | Swarm doesn't auto-pull | `docker pull <image>` before deploy |
+| Symptom                                  | Cause                                    | Fix                                                        |
+| ---------------------------------------- | ---------------------------------------- | ---------------------------------------------------------- |
+| 404 on `/login`                          | `CK_AUTH_ENABLED` not reaching container | Check for CRLF line endings in `.env`. Run `dos2unix .env` |
+| `auth_enabled: false` but env is set     | Trailing `\r` in env value               | Same: `dos2unix .env`                                      |
+| GoTrue: `password authentication failed` | DB volume has stale data                 | Nuke volume and redeploy                                   |
+| GoTrue: `role does not exist`            | Not using `supabase/postgres` image      | Must use `supabase/postgres:15.6.1.143`, not `postgres:15` |
+| `Skipping initialization`                | Volume already exists                    | `docker volume rm <volume>`                                |
+| `no such image` after prune              | Swarm doesn't auto-pull                  | `docker pull <image>` before deploy                        |

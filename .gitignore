@@ -37,6 +37,7 @@ web/frontend/.svelte-kit/
 deploy/.env
 deploy/.env.supabase
 deploy/.env.local
+deploy/.env.old
 deploy/weights/
 
 # IDE
