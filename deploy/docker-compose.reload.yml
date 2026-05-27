@@ -13,7 +13,7 @@ services:
   # ─── Supabase Stack ──────────────────────────────────────────────
 
   supabase-db:
-    image: supabase/postgres:15.6.1.143
+    image: supabase/postgres:17.6.1.129
     restart: unless-stopped
     ports:
       - "${POSTGRES_PORT:-54322}:5432"
@@ -25,10 +25,13 @@ services:
       PGPORT: ${POSTGRES_PORT:-5432}
       JWT_SECRET: ${JWT_SECRET:-change_me}
       JWT_EXP: ${JWT_EXPIRY:-3600}
+    env_file:
+      - .env
     volumes:
       - supabase-db-data:/var/lib/postgresql/data
       - ./scripts/db/init-roles.sql:/docker-entrypoint-initdb.d/00-init-roles.sql:ro
-      - ./scripts/db/init-db.sql:/docker-entrypoint-initdb.d/99-corridorkey.sql:ro
+      - ./scripts/db/init-passwords.sh:/docker-entrypoint-initdb.d/z_98-init-passwords.sh:ro
+      - ./scripts/db/init-db.sql:/docker-entrypoint-initdb.d/z_99-corridorkey.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U supabase_admin -d ${POSTGRES_DB:-corridorkey}"]
       interval: 10s
@@ -41,12 +44,14 @@ services:
     depends_on:
       supabase-db:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: 9999
       API_EXTERNAL_URL: ${API_EXTERNAL_URL:-http://localhost:54321}
       GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@supabase-db:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-corridorkey}?sslmode=disable
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:-change_me}@supabase-db:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-corridorkey}?sslmode=disable
       GOTRUE_SITE_URL: ${SITE_URL:-http://localhost:3000}
       GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS:-}
       GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP:-true}
@@ -129,20 +134,21 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── CorridorKey Web Server ──────────────────────────────────────
-  corridorkey-web:
+  
+# ─── CorridorKey Web Web Server with reloading ──────────────────────────────────────
+  corridorkey-reload:
     build:
       context: ..
-      dockerfile: web/Dockerfile.web
+      dockerfile: web/Dockerfile.dev
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
     depends_on:
       supabase-db:
         condition: service_healthy
     ports:
-      - "${CK_PORT:-3000}:3000"
+      - "3000:5173"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3000/api/health', timeout=5)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5173/api/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -154,6 +160,7 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    command: sh -c "npm ci --no-audit --no-fund && npm run dev -- --host 0.0.0.0 --port 5173"
     environment:
       - OPENCV_IO_ENABLE_OPENEXR=1
       - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
@@ -166,8 +173,8 @@ services:
       - CK_GOTRUE_URL=http://localhost:${GOTRUE_PORT:-54324}
       - CK_GOTRUE_INTERNAL_URL=http://supabase-auth:9999
       - CK_AUTH_TOKEN=${CK_AUTH_TOKEN:-}
-      - CK_DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-corridorkey}
-      - CK_MIGRATION_URL=postgresql://supabase_admin:${POSTGRES_PASSWORD}@supabase-db:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-corridorkey}
+      - CK_DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/${POSTGRES_DB:-corridorkey}
+      - CK_MIGRATION_URL=postgresql://supabase_admin:${POSTGRES_PASSWORD}@supabase-db:5432/${POSTGRES_DB:-corridorkey}
       - CK_SENTRY_DSN=${CK_SENTRY_DSN:-}
       - CK_METRICS_ENABLED=${CK_METRICS_ENABLED:-true}
       - CK_ENVIRONMENT=${CK_ENVIRONMENT:-development}
@@ -188,13 +195,13 @@ services:
       - CK_SMTP_FROM_EMAIL=${SMTP_ADMIN_EMAIL:-noreply@corridorkey.cloud}
       - CK_SMTP_FROM_NAME=${SMTP_SENDER_NAME:-CorridorKey}
       - CK_SITE_URL=${SITE_URL:-http://localhost:3000}
+      - CHOKIDAR_USEPOLLING=true
     volumes:
+      - ../web/frontend:/src:cached
       - ${CK_PROJECTS_DIR:-./Projects}:/app/Projects
       - ${CK_WEIGHTS_DIR:-./weights}/corridorkey:/app/CorridorKeyModule/checkpoints
       - ${CK_WEIGHTS_DIR:-./weights}/gvm:/app/gvm_core/weights
       - ${CK_WEIGHTS_DIR:-./weights}/videomama:/app/VideoMaMaInferenceModule/checkpoints/VideoMaMa
-  
-
 
 volumes:
   supabase-db-data:

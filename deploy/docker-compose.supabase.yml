@@ -21,8 +21,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-corridorkey}
     volumes:
       - supabase-db-data:/var/lib/postgresql/data
-      - ./init-roles.sql:/docker-entrypoint-initdb.d/00-init-roles.sql:ro
-      - ./init-db.sql:/docker-entrypoint-initdb.d/99-corridorkey.sql:ro
+      - ./scripts/db/init-roles.sql:/docker-entrypoint-initdb.d/00-init-roles.sql:ro
+      - ./scripts/db/init-db.sql:/docker-entrypoint-initdb.d/99-corridorkey.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U supabase_admin"]
       interval: 10s
