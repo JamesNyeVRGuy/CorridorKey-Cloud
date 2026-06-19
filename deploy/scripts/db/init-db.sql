@@ -94,3 +94,4 @@ DO $$ BEGIN
         GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ck TO postgres;
     END IF;
 END $$;
+
