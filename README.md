@@ -51,13 +51,76 @@ docker compose -f docker-compose.web.yml up -d
 # Open http://localhost:3000
 ```
 
+### Local React development stack
+
+The repository also includes a development stack for the Next.js frontend,
+FastAPI backend, Supabase-compatible services, Redis, and local monitoring:
+
+```bash
+cd develop
+cp .env.example .env
+docker compose --env-file .env -f compose.yml config --quiet
+docker compose --env-file .env -f compose.yml up -d --build
+```
+
+The default backend image is CPU-compatible. `CK_INSTALL_CUDA=false` is
+intentional: Docker Desktop on macOS cannot pass the Apple GPU/Metal runtime
+through to a Linux container, and the locked CUDA PyTorch wheel is not
+available for ARM64.
+
+The React frontend's Next.js request-body limit is configured for 10 GB so
+large clip uploads are not truncated by the default 10 MB middleware limit.
+The backend's `CK_MAX_UPLOAD_MB` setting remains the authoritative upload cap.
+
+To create the first administrator in the development stack, set these values
+in `develop/.env` before starting Compose:
+
+```env
+CK_ADMIN_EMAIL=admin@example.com
+```
+
+Then run the interactive admin bootstrap:
+
+```bash
+docker compose --env-file .env -f compose.yml --profile admin run --rm admin-bootstrap
+```
+
+It prompts for the password twice without storing it in `.env`. Generate a
+random password with:
+
+```bash
+python3 -c 'import secrets; print(secrets.token_urlsafe(24))'
+```
+
+The bootstrap derives a local service-role token from `JWT_SECRET`; an explicit
+`SERVICE_ROLE_KEY` may be supplied instead, but must remain server-only. Do not
+put a one-way password hash in `.env`: GoTrue's admin API needs the password
+to perform the initial user creation and creates its own password hash.
+
+For a supported Linux x86_64 host with NVIDIA Container Toolkit, opt into the
+CUDA dependency set before building:
+
+```bash
+CK_INSTALL_CUDA=true docker compose \
+  --env-file .env \
+  -f compose.yml \
+  build corridorkey-web
+```
+
+For Apple Silicon acceleration, run the MLX inference worker natively on macOS
+and connect it to the Dockerized backend as a development node. Do not set
+`CK_INSTALL_CUDA=true` on a Mac.
+
 **From source:**
 ```bash
 git clone https://github.com/JamesNyeVRGuy/CorridorKey.git
 cd CorridorKey
-uv sync --group dev --extra web --extra cuda
+uv sync --group dev --extra web
 uv run uvicorn web.api.app:create_app --factory --port 3000
 ```
+
+On a supported Linux x86_64/NVIDIA system, add `--extra cuda` to the `uv sync`
+command. On Apple Silicon, use the native MLX setup instead of the CUDA extra.
 
 ## Contributing a GPU Node
 

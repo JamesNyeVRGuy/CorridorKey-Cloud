@@ -58,3 +58,40 @@ jobs:
 
       - name: Run tests
         run: uv run pytest -v --tb=short -m "not gpu"
+
+  frontend-stack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web_next/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix web_next
+
+      - name: Validate frontend
+        run: |
+          npm --prefix web_next run typecheck
+          npm --prefix web_next run lint
+          npm --prefix web_next run build
+
+      - name: Validate development Compose configuration
+        run: |
+          docker compose -f develop/compose.yml --env-file develop/.env.example config --quiet
+          test -f develop/Projects/.gitkeep
+          test -f develop/weights/corridorkey/.gitkeep
+          test -f develop/weights/gvm/.gitkeep
+          test -f develop/weights/videomama/.gitkeep
+          test -f deploy/scripts/db/init-roles.sql
+          test -f deploy/scripts/db/init-passwords.sh
+          test -f deploy/scripts/db/init-db.sql
+          ! grep -Eq 'deploy:|traefik|nfs|shepherd' develop/compose.yml
+
+      - name: Build development Compose images
+        run: docker compose -f develop/compose.yml --env-file develop/.env.example build frontend corridorkey-web

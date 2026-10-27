@@ -43,3 +43,5 @@ deploy/weights/
 # Frontend build artifacts (node_modules, not the build output)
 web/frontend/node_modules/
 web/frontend/.svelte-kit/
+web_next/node_modules/
+web_next/.next/
