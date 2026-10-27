@@ -1,0 +1,340 @@
+name: corridorkey-develop
+
+services:
+  frontend:
+    build:
+      context: ../
+      dockerfile: web_next/Dockerfile.dev
+    environment:
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      BACKEND_INTERNAL_URL: http://corridorkey-web:3000
+      WATCHPACK_POLLING: ${WATCHPACK_POLLING:-true}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ../web_next:/app
+      - frontend-node-modules:/app/node_modules
+      - frontend-next:/app/.next
+    depends_on:
+      corridorkey-web:
+        condition: service_healthy
+    networks:
+      - develop
+
+  corridorkey-web:
+    build:
+      context: ..
+      dockerfile: web/Dockerfile.web
+      args:
+        CK_INSTALL_CUDA: ${CK_INSTALL_CUDA:-false}
+    command:
+      - /app/.venv/bin/uvicorn
+      - web.api.app:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "3000"
+      - --timeout-keep-alive
+      - "300"
+    ports:
+      - "${CK_PORT:-3001}:3000"
+    environment:
+      TZ: ${TZ:-UTC}
+      CK_SCHEDULE_TIMEZONE: ${CK_SCHEDULE_TIMEZONE:-UTC}
+      OPENCV_IO_ENABLE_OPENEXR: "1"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
+      CK_CLIPS_DIR: /app/Projects
+      CK_PROJECTS_DIR: /app/Projects
+      CK_WEIGHTS_DIR: /app/weights
+      CK_AUTH_ENABLED: ${CK_AUTH_ENABLED:-true}
+      CK_JWT_SECRET: ${JWT_SECRET:-development-jwt-secret-change-me}
+      CK_AUTH_TOKEN: ${CK_AUTH_TOKEN:-}
+      CK_ENVIRONMENT: ${CK_ENVIRONMENT:-development}
+      CK_LOG_FORMAT: ${CK_LOG_FORMAT:-json}
+      CK_METRICS_ENABLED: ${CK_METRICS_ENABLED:-true}
+      CK_DOCS_PUBLIC: ${CK_DOCS_PUBLIC:-true}
+      CK_SERVE_LEGACY_FRONTEND: "false"
+      CK_MAX_UPLOAD_MB: ${CK_MAX_UPLOAD_MB:-10240}
+      CK_CHUNK_SIZE_MB: ${CK_CHUNK_SIZE_MB:-500}
+      CK_STORAGE_BACKEND: ${CK_STORAGE_BACKEND:-local}
+      CK_S3_BUCKET: ${CK_S3_BUCKET:-}
+      CK_S3_PREFIX: ${CK_S3_PREFIX:-}
+      CK_S3_ENDPOINT_URL: ${CK_S3_ENDPOINT_URL:-}
+      CK_S3_REGION: ${CK_S3_REGION:-us-east-1}
+      CK_S3_ACCESS_KEY_ID: ${CK_S3_ACCESS_KEY_ID:-}
+      CK_S3_SECRET_ACCESS_KEY: ${CK_S3_SECRET_ACCESS_KEY:-}
+      CK_REDIS_URL: ${CK_REDIS_URL:-redis://redis:6379/0}
+      CK_DATABASE_URL: ${CK_DATABASE_URL:-postgresql://supabase_admin:${POSTGRES_PASSWORD:-development-password}@db:5432/${POSTGRES_DB:-corridorkey}}
+      CK_MIGRATION_URL: ${CK_MIGRATION_URL:-postgresql://supabase_admin:${POSTGRES_PASSWORD:-development-password}@db:5432/${POSTGRES_DB:-corridorkey}}
+      CK_GOTRUE_INTERNAL_URL: ${CK_GOTRUE_INTERNAL_URL:-http://auth:9999}
+      CK_GOTRUE_URL: ${CK_GOTRUE_URL:-http://localhost:54324}
+      CK_SUPABASE_SERVICE_KEY: ${CK_SUPABASE_SERVICE_KEY:-}
+      CK_SITE_URL: ${SITE_URL:-http://localhost:3000}
+      CKWEB_FILE_BASE: ${CKWEB_FILE_BASE:-}
+      CK_SMTP_HOST: ${SMTP_HOST:-}
+      CK_SMTP_PORT: ${SMTP_PORT:-587}
+      CK_SMTP_USER: ${SMTP_USER:-}
+      CK_SMTP_PASS: ${SMTP_PASS:-}
+      CK_SMTP_FROM_EMAIL: ${SMTP_ADMIN_EMAIL:-noreply@corridorkey.local}
+      CK_SMTP_FROM_NAME: ${SMTP_SENDER_NAME:-CorridorKey}
+    volumes:
+      - ${CK_PROJECTS_DIR:-./Projects}:/app/Projects
+      - ${CK_WEIGHTS_DIR:-./weights}/corridorkey:/app/CorridorKeyModule/checkpoints
+      - ${CK_WEIGHTS_DIR:-./weights}/gvm:/app/gvm_core/weights
+      - ${CK_WEIGHTS_DIR:-./weights}/videomama:/app/VideoMaMaInferenceModule/checkpoints/VideoMaMa
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/app/.venv/bin/python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/api/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - develop
+
+  admin-bootstrap:
+    image: python:3.12-alpine
+    environment:
+      CK_GOTRUE_INTERNAL_URL: http://auth:9999
+      CK_ADMIN_EMAIL: ${CK_ADMIN_EMAIL:-}
+      CK_ADMIN_PASSWORD: ${CK_ADMIN_PASSWORD:-}
+      CK_SUPABASE_SERVICE_KEY: ${CK_SUPABASE_SERVICE_KEY:-}
+      SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-development-jwt-secret-change-me}
+    volumes:
+      - ./scripts/bootstrap-admin.py:/bootstrap-admin.py:ro
+    command: ["python", "/bootstrap-admin.py"]
+    profiles: ["admin"]
+    depends_on:
+      auth:
+        condition: service_started
+    restart: "no"
+    networks:
+      - develop
+
+  db:
+    image: supabase/postgres:15.6.1.143
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      PGPORT: 5432
+      POSTGRES_PORT: 5432
+      PGPASSWORD: ${POSTGRES_PASSWORD:-development-password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-development-password}
+      PGDATABASE: ${POSTGRES_DB:-corridorkey}
+      POSTGRES_DB: ${POSTGRES_DB:-corridorkey}
+      JWT_SECRET: ${JWT_SECRET:-development-jwt-secret-change-me}
+      JWT_EXP: ${JWT_EXPIRY:-3600}
+    ports:
+      - "${POSTGRES_PORT:-54322}:5432"
+    volumes:
+      - develop-db-data:/var/lib/postgresql/data
+      - ../deploy/scripts/db/init-roles.sql:/docker-entrypoint-initdb.d/00-init-roles.sql:ro
+      - ../deploy/scripts/db/init-passwords.sh:/docker-entrypoint-initdb.d/z_98-init-passwords.sh:ro
+      - ../deploy/scripts/db/init-db.sql:/docker-entrypoint-initdb.d/99-corridorkey.sql:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U supabase_admin -d ${POSTGRES_DB:-corridorkey}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - develop
+
+  auth:
+    image: supabase/gotrue:v2.170.0
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL:-http://localhost:54321}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:-development-password}@db:5432/${POSTGRES_DB:-corridorkey}
+      GOTRUE_SITE_URL: ${SITE_URL:-http://localhost:3000}
+      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS:-http://localhost:3000/**,http://localhost:3000/}
+      GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP:-false}
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:-development-jwt-secret-change-me}
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: ${CK_AUTH_ENABLED:-true}
+      GOTRUE_MAILER_AUTOCONFIRM: ${MAILER_AUTOCONFIRM:-true}
+      GOTRUE_SMTP_HOST: ${SMTP_HOST:-}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT:-587}
+      GOTRUE_SMTP_USER: ${SMTP_USER:-}
+      GOTRUE_SMTP_PASS: ${SMTP_PASS:-}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL:-noreply@corridorkey.local}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME:-CorridorKey}
+    ports:
+      - "${GOTRUE_PORT:-54324}:9999"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - develop
+
+  rest:
+    image: postgrest/postgrest:v12.2.3
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD:-development-password}@db:5432/${POSTGRES_DB:-corridorkey}
+      PGRST_DB_SCHEMAS: public,storage
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET:-development-jwt-secret-change-me}
+    ports:
+      - "${POSTGREST_PORT:-54321}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - develop
+
+  meta:
+    image: supabase/postgres-meta:v0.84.2
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: ${POSTGRES_DB:-corridorkey}
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD:-development-password}
+      CRYPTO_KEY: ${PG_META_CRYPTO_KEY:-development-meta-key-change-me}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - develop
+
+  redis:
+    image: redis:7-alpine
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--appendfsync",
+        "everysec",
+        "--maxmemory-policy",
+        "noeviction",
+      ]
+    volumes:
+      - develop-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - develop
+
+  studio:
+    image: supabase/studio:latest
+    profiles: ["studio"]
+    environment:
+      SUPABASE_URL: http://rest:3000
+      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL:-http://localhost:54321}
+      SUPABASE_ANON_KEY: ${ANON_KEY:-}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY:-}
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-development-password}
+    ports:
+      - "${STUDIO_PORT:-54323}:3000"
+    depends_on:
+      meta:
+        condition: service_started
+    networks:
+      - develop
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - develop-prometheus-data:/prometheus
+    depends_on:
+      corridorkey-web:
+        condition: service_healthy
+    networks:
+      - develop
+
+  loki:
+    image: grafana/loki:3.3.2
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - develop-loki-data:/loki
+    networks:
+      - develop
+
+  promtail:
+    image: grafana/promtail:3.3.2
+    profiles: ["observability"]
+    command: ["-config.file=/etc/promtail/promtail-config.yml"]
+    volumes:
+      - ./monitoring/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - promtail-positions:/tmp
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      loki:
+        condition: service_started
+    networks:
+      - develop
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    ports:
+      - "${GRAFANA_PORT:-3002}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-development-admin-password}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - develop-grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+    networks:
+      - develop
+
+  mail:
+    image: axllent/mailpit:v1.21
+    profiles: ["mail"]
+    ports:
+      - "${MAILPIT_PORT:-8025}:8025"
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+    networks:
+      - develop
+
+networks:
+  develop:
+    name: corridorkey-develop
+
+volumes:
+  frontend-node-modules:
+  frontend-next:
+  develop-db-data:
+  develop-redis-data:
+  develop-prometheus-data:
+  develop-loki-data:
+  develop-grafana-data:
+  promtail-positions:

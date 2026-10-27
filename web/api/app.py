@@ -479,9 +479,16 @@ def create_app() -> FastAPI:
     # WebSocket
     app.websocket("/ws")(websocket_endpoint)
 
-    # Serve built Svelte SPA from web/frontend/build/
+    # Serve the legacy Svelte SPA only when explicitly enabled. The React
+    # development stack owns browser page routes and uses this service for API
+    # and WebSocket traffic only.
     static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "build")
-    if os.path.isdir(static_dir):
+    serve_legacy_frontend = os.environ.get("CK_SERVE_LEGACY_FRONTEND", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if serve_legacy_frontend and os.path.isdir(static_dir):
         # Mount static assets (JS, CSS, images) — but NOT as catch-all
         app.mount("/_app", StaticFiles(directory=os.path.join(static_dir, "_app")), name="spa-assets")
 
@@ -501,7 +508,9 @@ def create_app() -> FastAPI:
                 if file_path.startswith(static_real + os.sep) and os.path.isfile(file_path):
                     return FileResponse(file_path)
             return FileResponse(index_html)
-    else:
+    elif serve_legacy_frontend:
         logger.warning(f"SPA build directory not found at {static_dir} — serving API only")
+    else:
+        logger.info("Legacy Svelte frontend disabled — serving API and WebSocket endpoints only")
 
     return app

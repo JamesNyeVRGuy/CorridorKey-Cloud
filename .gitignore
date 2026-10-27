@@ -68,3 +68,4 @@ site
 .hypothesis
 dist
 build
+.env
